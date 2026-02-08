@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Connexion</title>
+
+   
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo"></div>
+
+        <h2>Connexion</h2>
+        <p>Accès au système RFID</p>
+
+        <form method="POST">
+            <input type="text" name="utilisateur" placeholder="Utilisateur" required>
+            <input type="password" name="mot_de_passe" placeholder="Mot de passe" required>
+
+            <button type="submit">Se connecter</button>
+        </form>
+
+        <div class="footer">
+            Projet RFID – BTS CIEL
+        </div>
+    </div>
+
+</body>
+</html>
