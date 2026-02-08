@@ -3,56 +3,107 @@ import mysql.connector
 import hashlib
 
 app = Flask(__name__)
-app.secret_key = "secret_test_bts"  # clé pour gérer les sessions
+app.secret_key = "cle_secrete_bts_rfid"  # clé de session
 
 def get_db():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="1234",          # ton mot de passe BDD
+        password="1234",
         database="Projet_BTS_RFID"
     )
 
-# -------------------------
+# ======================
 # LOGIN
-# -------------------------
+# ======================
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        user = request.form["utilisateur"]
-        mdp = request.form["mot_de_passe"]
+        utilisateur = request.form["utilisateur"]
+        mot_de_passe = request.form["mot_de_passe"]
 
-        mdp_hash = hashlib.sha256(mdp.encode()).hexdigest()
+        mdp_hash = hashlib.sha256(mot_de_passe.encode()).hexdigest()
 
         db = get_db()
         cursor = db.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s",
-            (user, mdp_hash)
-        )
-        result = cursor.fetchone()
+
+        cursor.execute("""
+            SELECT id_utilisateur, utilisateur, nom, prenom, role
+            FROM utilisateurs
+            WHERE utilisateur = %s AND mot_de_passe = %s
+        """, (utilisateur, mdp_hash))
+
+        user = cursor.fetchone()
         cursor.close()
         db.close()
 
-        if result:
-            session["user"] = user
+        if user:
+            session["id_user"] = user["id_utilisateur"]
+            session["utilisateur"] = user["utilisateur"]
+            session["nom"] = user["nom"]
+            session["prenom"] = user["prenom"]
+            session["role"] = user["role"]
+
             return redirect("/dashboard")
         else:
-            return "Login incorrect"
+            return render_template("IHM/login.html", erreur="Identifiants incorrects")
 
     return render_template("IHM/login.html")
 
-# -------------------------
+
+# ======================
 # DASHBOARD
-# -------------------------
+# ======================
 @app.route("/dashboard")
 def dashboard():
-    if "user" not in session:
+    if "id_user" not in session:
         return redirect("/")
-    return render_template("IHM/dashboard.html")
 
-# -------------------------
-# Lancement du serveur
-# -------------------------
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # Matériel en stock
+    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE statut = 'En Stock'")
+    nb_stock = cursor.fetchone()["total"]
+
+    # Matériel sorti
+    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE statut = 'Sorti'")
+    nb_sorti = cursor.fetchone()["total"]
+
+    # 10 derniers mouvements
+    cursor.execute("""
+        SELECT m.type_mouvement, m.date_heure,
+               ms.nom_modele,
+               u.nom, u.prenom
+        FROM mouvements m
+        JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
+        JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
+        ORDER BY m.date_heure DESC
+        LIMIT 10
+    """)
+    mouvements = cursor.fetchall()
+
+    cursor.close()
+    db.close()
+
+    return render_template(
+        "IHM/dashboard.html",
+        nb_stock=nb_stock,
+        nb_sorti=nb_sorti,
+        mouvements=mouvements,
+        nom=session["nom"],
+        prenom=session["prenom"]
+    )
+
+
+# ======================
+# LOGOUT
+# ======================
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
