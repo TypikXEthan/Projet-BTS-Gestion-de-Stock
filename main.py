@@ -13,9 +13,7 @@ def get_db():
         database="Projet_BTS_RFID"
     )
 
-# ======================
 # LOGIN
-# ======================
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -51,9 +49,7 @@ def login():
     return render_template("IHM/login.html")
 
 
-# ======================
 # DASHBOARD
-# ======================
 @app.route("/dashboard")
 def dashboard():
     if "id_user" not in session:
@@ -70,7 +66,7 @@ def dashboard():
     cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE statut = 'Sorti'")
     nb_sorti = cursor.fetchone()["total"]
 
-    # 10 derniers mouvements
+    # 10 derniers mouvements peut etre metre 15 
     cursor.execute("""
         SELECT m.type_mouvement, m.date_heure,
                ms.nom_modele,
@@ -95,10 +91,56 @@ def dashboard():
         prenom=session["prenom"]
     )
 
+# HISTORIQUE
+@app.route("/historique", methods=["GET", "POST"])
+def historique():
+    if "id_user" not in session:
+        return redirect("/")
 
-# ======================
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # Resultat de la recherche
+    recherche = request.args.get("recherche", "").strip()
+
+    query = """
+        SELECT m.type_mouvement, m.date_heure,
+               ms.nom_modele,
+               u.nom, u.prenom
+        FROM mouvements m
+        JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
+        JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
+    """
+
+    params = ()
+    if recherche:
+        query += """
+            WHERE ms.nom_modele LIKE %s
+               OR u.nom LIKE %s
+               OR u.prenom LIKE %s
+               OR DATE(m.date_heure) = %s
+        """
+        params = (f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", recherche)
+
+    query += " ORDER BY m.date_heure DESC"
+
+    cursor.execute(query, params)
+    mouvements = cursor.fetchall()
+
+    cursor.close()
+    db.close()
+
+    return render_template(
+        "IHM/historique.html",
+        mouvements=mouvements,
+        nom=session["nom"],
+        prenom=session["prenom"],
+        recherche=recherche
+    )
+
+
+
 # LOGOUT
-# ======================
 @app.route("/logout")
 def logout():
     session.clear()
