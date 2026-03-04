@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Tableau de bord</title>
+    <title>Utilisateurs</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
 </head>
 
@@ -24,40 +24,34 @@
 <div class="contenu-tableau-de-bord">
 
     <header class="entete-tableau-de-bord">
-        <h1>Tableau de bord</h1>
+        <h1>Utilisateurs</h1>
         <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
     </header>
 
-    <div class="statistiques">
-        <div class="carte bleu">
-            <h3>Matériels en stock</h3>
-            <p>{{ nb_stock }}</p>
-        </div>
-
-        <div class="carte bleu-clair">
-            <h3>Matériels sortis</h3>
-            <p>{{ nb_sorti }}</p>
-        </div>
-    </div>
-
-    <div class="conteneur-tableau">
-        <h3>Derniers mouvements</h3>
+<div class="conteneur-tableau utilisateurs-table">
 
         <table>
             <tr>
-                <th>Matériel</th>
-                <th>Utilisateur</th>
-                <th>Mouvement</th>
-                <th>Date</th>
+                <th>Nom</th>
+                <th>Prénom</th>
+                <th>Identifiant</th>
+                <th>Rôle</th>
+                <th>Matériels empruntés</th>
             </tr>
 
-            {% for m in mouvements %}
+            {% for u in utilisateurs %}
             <tr>
-                <td>{{ m.nom_modele }}</td>
-                <td>{{ m.prenom }} {{ m.nom }}</td> 
-		<!--Peut etre changer nom prénom pour faire plus propre-->
-                <td>{{ m.type_mouvement }}</td>
-                <td>{{ m.date_heure }}</td>
+                <td>{{ u.nom }}</td>
+                <td>{{ u.prenom }}</td>
+                <td>{{ u.utilisateur }}</td>
+                <td>{{ u.role }}</td>
+                <td>
+                    {% if u.nb_emprunts > 0 %}
+                        <span class="badge badge-blue">{{ u.nb_emprunts }}</span>
+                    {% else %}
+                        <span class="badge badge-grey">0</span>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </table>
@@ -67,3 +61,6 @@
 
 </body>
 </html>
+
+
+

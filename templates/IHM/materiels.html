@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Matériels</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+
+    <a href="/dashboard" class="actif">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+{% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn"> Administration</a>
+{% endif %}
+</div>
+
+<div class="contenu-tableau-de-bord">
+
+    <header class="entete-tableau-de-bord">
+        <h1>Liste des matériels</h1>
+        <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
+    </header>
+
+<!--Barre de recherche--> 
+    <form method="get" class="barre-recherche">
+        <input type="text" name="recherche"
+               placeholder="Rechercher un matériel ou RFID"
+               value="{{ recherche }}">
+        <button type="submit">Rechercher</button>
+    </form>
+
+    <div class="conteneur-tableau">
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Matériel</th>
+                <th>RFID</th>
+                <th>Statut</th>
+                <th>Utilisateur</th>
+            </tr>
+
+            {% for m in materiels %}
+            <tr>
+                <td>{{ m.id_materiel }}</td>
+                <td>{{ m.nom_modele }}</td>
+                <td>{{ m.rfid_tag_epc }}</td>
+                <td>
+                    {% if m.statut == "En Stock" %}
+                        <span class="statut-ok">En Stock</span>
+                    {% else %}
+                        <span class="statut-ko">Sorti</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if m.prenom %}
+                        {{ m.prenom }} {{ m.nom }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        {% if not materiels %}
+        <p style="margin-top:20px;">Aucun matériel trouvé.</p>
+        {% endif %}
+    </div>
+
+<!--Pagination(Numerotation de page 1,2,3 pour changer de page--> 
+    {% if total_pages > 1 %}
+    <div class="pagination">
+
+        <a href="?page=1&recherche={{ recherche }}">⏮️</a>
+
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&recherche={{ recherche }}">⬅️</a>
+        {% endif %}
+
+        <span>Page {{ page }} / {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}&recherche={{ recherche }}">➡️</a>
+        {% endif %}
+
+        <a href="?page={{ total_pages }}&recherche={{ recherche }}">⏭️</a>
+
+    </div>
+    {% endif %}
+
+</div>
+
+</body>
+</html>

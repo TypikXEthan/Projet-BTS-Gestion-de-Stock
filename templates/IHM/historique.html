@@ -11,11 +11,14 @@
 <div class="barre-laterale">
     <h2>RFID</h2>
 
-    <a href="/dashboard">Tableau de bord</a>
-    <a href="#">Matériels</a>
-    <a href="/historique" class="actif">Historique</a>
-    <a href="#">Utilisateurs</a>
+    <a href="/dashboard" class="actif">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique</a>
+    <a href="/utilisateurs">Utilisateurs</a>
     <a href="/logout" class="deconnexion">Déconnexion</a>
+{% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn"> Administration</a>
+{% endif %}
 </div>
 
 <div class="contenu-tableau-de-bord">
@@ -25,7 +28,7 @@
         <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
     </header>
 
-    <!-- Barre de recherche -->
+	<!--Barre de recherche-->
     <form method="get" style="margin-bottom: 20px;">
         <input type="text" name="recherche" placeholder="Rechercher matériel, utilisateur ou date" value="{{ recherche }}" style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ccc;">
         <button type="submit" style="padding: 10px 20px; border-radius: 8px; border: none; background-color: #34495e; color: white; cursor: pointer;">Rechercher</button>

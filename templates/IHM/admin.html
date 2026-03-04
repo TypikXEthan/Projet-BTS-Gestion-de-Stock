@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Administration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+
+    <a href="/dashboard" class="actif">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+{% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn"> Administration</a>
+{% endif %}
+</div>
+
+    <div class="admin-container">
+
+        <h1> Administration</h1>
+        <p class="admin-user">
+            Connecté : <strong>{{ prenom }} {{ nom }}</strong>
+        </p>
+
+        <a href="{{ url_for('dashboard') }}" class="btn-retour">
+             Retour au Dashboard
+        </a>
+
+        <div class="admin-card">
+            <h2> Créer un utilisateur</h2>
+
+            <form method="POST">
+                <input type="hidden" name="action" value="creer_utilisateur">
+
+                <input type="text" name="nom" placeholder="Nom" required>
+                <input type="text" name="prenom" placeholder="Prénom" required>
+                <input type="text" name="identifiant" placeholder="Identifiant" required>
+                <input type="text" name="role" placeholder="Rôle" required>
+                <input type="password" name="mot_de_passe" placeholder="Mot de passe" required>
+
+                <button type="submit" class="btn btn-success">Créer</button>
+            </form>
+        </div>
+
+        <div class="admin-card">
+            <h2> Liste des utilisateurs</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Identifiant</th>
+                        <th>Rôle</th>
+                        <th>Admin</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in utilisateurs %}
+                    <tr>
+                        <td>{{ u.prenom }} {{ u.nom }}</td>
+                        <td>{{ u.utilisateur }}</td>
+                        <td>{{ u.role }}</td>
+                        <td>
+                            {% if u.admin == 1 %}
+                                <span class="badge-admin">Oui</span>
+                            {% else %}
+                                <span class="badge-user">Non</span>
+                            {% endif %}
+                        </td>
+                        <td class="actions">
+
+                            <!--Supprimer utilisateur-->
+                            <form method="POST">
+                                <input type="hidden" name="action" value="supprimer_utilisateur">
+                                <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
+                                <button class="btn btn-danger">Supprimer</button>
+                            </form>
+
+                            <!--Ajout d'Admin-->
+                            <form method="POST">
+                                <input type="hidden" name="action" value="toggle_admin">
+                                <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
+                                <input type="hidden" name="nouveau_statut" value="{{ 0 if u.admin == 1 else 1 }}">
+                                <button class="btn btn-warning">
+                                    {% if u.admin == 1 %}
+                                        Retirer Admin
+                                    {% else %}
+                                        Mettre Admin
+                                    {% endif %}
+                                </button>
+                            </form>
+			   <!--Changer mdp -->
+                            <form method="POST">
+                                <input type="hidden" name="action" value="changer_mdp">
+                                <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
+                                <input type="password" name="nouveau_mdp" placeholder="Nouveau MDP" required>
+                                <button class="btn btn-primary">Changer MDP</button>
+                            </form>
+
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+	<!--Ajout materiel--> 
+        <div class="admin-card">
+            <h2> Ajouter du matériel</h2>
+
+            <form method="POST">
+                <input type="hidden" name="action" value="ajouter_materiel">
+
+                <input type="text" name="nom_modele" placeholder="Nom du modèle" required>
+                <input type="text" name="rfid" placeholder="RFID EPC" required>
+
+                <button type="submit" class="btn btn-success">Ajouter</button>
+            </form>
+        </div>
+
+	<!--Liste de matériel--> 
+        <div class="admin-card">
+            <h2> Liste du matériel</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Modèle</th>
+                        <th>RFID</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in materiels %}
+                    <tr>
+                        <td>{{ m.nom_modele }}</td>
+                        <td>{{ m.rfid_tag_epc }}</td>
+                        <td>
+                            {% if m.statut == "En Stock" %}
+                                <span class="badge-stock">En Stock</span>
+                            {% else %}
+                                <span class="badge-out">Sorti</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+</body>
+</html>
