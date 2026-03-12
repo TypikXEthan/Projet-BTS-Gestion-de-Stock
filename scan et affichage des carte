@@ -1,0 +1,29 @@
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
+import time
+
+# Initialisation du lecteur
+reader = SimpleMFRC522()
+
+print("--- SCANNER DE BADGE RFID ---")
+print("Approchez une carte ou un badge du lecteur...")
+print("(Appuyez sur Ctrl+C pour arrêter)")
+
+try:
+    while True:
+        # Cette fonction attend qu'une carte soit présente
+        id, text = reader.read()
+        
+        print("-" * 30)
+        print(f"ID UNIQUE : {id}")
+        print(f"MESSAGE SUR LA CARTE : {text.strip()}")
+        print("-" * 30)
+        
+        print("\nPrêt pour le prochain scan...")
+        time.sleep(2) # Petite pause pour éviter de lire 10 fois la même carte
+
+except KeyboardInterrupt:
+    print("\nArrêt du scanner.")
+finally:
+    # Nettoyage des broches GPIO pour éviter les erreurs au prochain lancement
+    GPIO.cleanup()
