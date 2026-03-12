@@ -1,0 +1,48 @@
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
+import time
+
+# --- CONFIGURATION GPIO ---
+RELAY_PIN = 18
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(RELAY_PIN, GPIO.OUT)
+GPIO.output(RELAY_PIN, GPIO.LOW) # S'assurer que le relais est éteint au début
+
+# --- CONFIGURATION RFID ---
+# Ajoute tes IDs ici
+ACCES_AUTORISES = [
+    13705713735, 
+    84141775136, 
+]
+
+reader = SimpleMFRC522()
+
+print("Systeme de controle d acces avec relais pret...")
+
+try:
+    while True:
+        id, text = reader.read()
+        print(f"\nCarte detectee ! ID: {id}")
+
+        if id in ACCES_AUTORISES:
+            print("ACCES ACCORDE")
+            print("Activation du relais (Porte ouverte)...")
+            
+            # On envoie le signal au relais
+            GPIO.output(RELAY_PIN, GPIO.HIGH)
+            
+            time.sleep(3) # La porte reste déverrouillée 3 secondes
+            
+            # On coupe le signal
+            GPIO.output(RELAY_PIN, GPIO.LOW)
+            print("Relais desactive (Porte verrouillee).")
+        else:
+            print("ACCES REFUSE")
+            print("Identifiant inconnu.")
+        
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("\nArret du programme.")
+finally:
+    GPIO.cleanup()
