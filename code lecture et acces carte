@@ -1,0 +1,43 @@
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
+import time
+
+# --- CONFIGURATION ---
+# Ajoute ici tous les IDs autorisés dans la liste entre crochets, séparés par des virgules
+ACCES_AUTORISES = [
+    13705713735, 
+    84141775136, 
+]
+
+reader = SimpleMFRC522()
+
+print("Systeme de controle d acces pret...")
+print("En attente d un scan...")
+
+try:
+    while True:
+        # Lecture de la carte
+        id, text = reader.read()
+        
+        print(f"\nCarte detectee ! ID: {id}")
+
+        # On vérifie si l'ID scanné est présent dans notre liste
+        if id in ACCES_AUTORISES:
+            print("ACCES ACCORDE")
+            print("Deverrouillage de la porte...")
+            
+            # Action de déverrouillage ici
+            
+            time.sleep(3) 
+            print("Porte verrouillee.")
+        else:
+            print("ACCES REFUSE")
+            print("Identifiant inconnu.")
+        
+        print("\nEn attente d un nouveau scan...")
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("\nArret du programme.")
+finally:
+    GPIO.cleanup()
