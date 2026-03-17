@@ -4,14 +4,14 @@ import hashlib
 
 app = Flask(__name__)
 app.secret_key = "cle_secrete_bts_rfid"  # clé de session
-
 def get_db():
     return mysql.connector.connect(
         host="localhost",
         user="root",
         password="1234",
         database="Projet_BTS_RFID"
-    )
+)
+
 
 #Connexion
 @app.route("/", methods=["GET", "POST"])
