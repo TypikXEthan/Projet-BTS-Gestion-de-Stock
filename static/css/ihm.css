@@ -617,3 +617,47 @@ tr:hover td {
         right: 10px;
     }
 }
+/* ===== RESERVATIONS ===== */
+
+.form-reservation {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.form-reservation input[type="date"] {
+    padding: 6px;
+    border-radius: var(--arrondi);
+    border: 1px solid var(--gris-clair);
+}
+
+.form-reservation input[type="date"]:focus {
+    border-color: var(--bleu-principal);
+    outline: none;
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* badge statut */
+.statut-confirmee {
+    background-color: var(--bleu-clair);
+    padding: 5px 10px;
+    border-radius: var(--arrondi);
+}
+
+.statut-annulee {
+    background-color: #fff5f5;
+    color: var(--rouge);
+    padding: 5px 10px;
+    border-radius: var(--arrondi);
+}
+
+.statut-recuperer {
+    background-color: #f0fff4;
+    color: var(--vert);
+    padding: 5px 10px;
+    border-radius: var(--arrondi);
+}

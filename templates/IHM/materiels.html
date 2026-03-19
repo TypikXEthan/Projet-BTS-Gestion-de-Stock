@@ -8,20 +8,24 @@
 
 <body class="corps-tableau-de-bord">
 
+<!-- ================= SIDEBAR ================= -->
 <div class="barre-laterale">
     <h2>RFID</h2>
 
     <a href="/dashboard">Tableau de bord</a>
-    <a href="/materiels"class="actif">Matériels</a>
+    <a href="/materiels" class="actif">Matériels</a>
     <a href="/historique">Historique</a>
     <a href="/utilisateurs">Utilisateurs</a>
-{% if session["admin"] == 1 %}
-    <a href="/admin" class="admin-btn"> Administration</a>
-{% endif %}
-<a href="/logout" class="deconnexion">Déconnexion</a>
+    <a href="/reservations">Réservations</a>
 
+    {% if session["admin"] == 1 %}
+        <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+
+    <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
+<!-- ================= CONTENU ================= -->
 <div class="contenu-tableau-de-bord">
 
     <header class="entete-tableau-de-bord">
@@ -29,7 +33,7 @@
         <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
     </header>
 
-<!--Barre de recherche--> 
+    <!-- 🔍 RECHERCHE -->
     <form method="get" class="barre-recherche">
         <input type="text" name="recherche"
                placeholder="Rechercher un matériel ou RFID"
@@ -37,58 +41,70 @@
         <button type="submit">Rechercher</button>
     </form>
 
+    <!-- 📦 TABLEAU -->
     <div class="conteneur-tableau">
         <table>
-            <tr>
-                <th>ID</th>
-                <th>Matériel</th>
-                <th>RFID</th>
-                <th>Statut</th>
-                <th>Utilisateur</th>
-            </tr>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Modèle</th>
+                    <th>RFID</th>
+                    <th>Statut</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
 
-            {% for m in materiels %}
-            <tr>
-                <td>{{ m.id_materiel }}</td>
-                <td>{{ m.nom_modele }}</td>
-                <td>{{ m.rfid_tag_epc }}</td>
-                <td>
-                    {% if m.statut == "En Stock" %}
-                        <span class="statut-ok">En Stock</span>
-                    {% else %}
-                        <span class="statut-ko">Sorti</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if m.prenom %}
-                        {{ m.prenom }} {{ m.nom }}
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
+            <tbody>
+                {% for m in materiels %}
+                <tr>
+                    <td>{{ m.id_materiel }}</td>
+                    <td>{{ m.nom_modele }}</td>
+                    <td>{{ m.rfid_tag_epc }}</td>
+
+                    <!-- STATUT -->
+                    <td>
+                        {% if m.stock == 1 %}
+                            <span class="statut-ok">En Stock</span>
+                        {% else %}
+                            <span class="statut-ko">Sorti</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- ACTION -->
+                    <td>
+                        <form method="POST" onsubmit="return confirmer()" style="display:inline">
+                            <input type="hidden" name="action" value="confirmer_materiel">
+                            <input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
+                            <button type="submit" class="btn btn-success">
+                                Confirmer
+                            </button>
+                        </form>
+                    </td>
+
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
 
         {% if not materiels %}
-        <p style="margin-top:20px;">Aucun matériel trouvé.</p>
+            <p style="margin-top:20px;">Aucun matériel trouvé.</p>
         {% endif %}
     </div>
 
-<!--Pagination(Numerotation de page 1,2,3 pour changer de page--> 
-    {% if total_pages > 1 %}
+    <!-- 📄 PAGINATION -->
+    {% if total_pages and total_pages > 1 %}
     <div class="pagination">
 
         <a href="?page=1&recherche={{ recherche }}">⏮️</a>
 
         {% if page > 1 %}
-        <a href="?page={{ page - 1 }}&recherche={{ recherche }}">⬅️</a>
+            <a href="?page={{ page - 1 }}&recherche={{ recherche }}">⬅️</a>
         {% endif %}
 
         <span>Page {{ page }} / {{ total_pages }}</span>
 
         {% if page < total_pages %}
-        <a href="?page={{ page + 1 }}&recherche={{ recherche }}">➡️</a>
+            <a href="?page={{ page + 1 }}&recherche={{ recherche }}">➡️</a>
         {% endif %}
 
         <a href="?page={{ total_pages }}&recherche={{ recherche }}">⏭️</a>
@@ -97,6 +113,13 @@
     {% endif %}
 
 </div>
+
+<!-- ================= JS POPUP ================= -->
+<script>
+function confirmer() {
+    return confirm("Voulez-vous vraiment changer le statut de ce matériel ?");
+}
+</script>
 
 </body>
 </html>

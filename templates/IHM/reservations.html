@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Matériels</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+<body>
+<body class="corps-tableau-de-bord">
+
+<body class="corps-tableau-de-bord">
+
+<!-- ================= SIDEBAR ================= -->
+<div class="barre-laterale">
+    <h2>RFID</h2>
+
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/reservations" class="actif">Réservations</a>
+
+    {% if admin == 1 %}
+        <a href="/admin">Administration</a>
+    {% endif %}
+
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<!-- ================= CONTENU ================= -->
+<div class="contenu-tableau-de-bord">
+
+<div class="entete-tableau-de-bord">
+    <h1>Réservations</h1>
+    <p>{{ prenom }} {{ nom }}</p>
+</div>
+
+<!-- ================= RESERVER ================= -->
+<div class="conteneur-tableau">
+<h2>Réserver un matériel</h2>
+
+<form method="post" class="form-reservation">
+
+<label>Matériel :</label>
+<select name="id_materiel" id="materiel_select" required onchange="updateInfos()">
+    <option value="">-- Choisir un matériel --</option>
+    
+    {% for m in materiels %}
+      <option 
+    	value="{{ m.id_materiel }}" 
+    	data-rfid="{{ m.rfid_tag_epc }}"
+    	data-id="{{ m.id_materiel }}">
+    	ID: {{ m.id_materiel }} - {{ m.nom_modele }}
+      </option>
+    {% endfor %}
+</select>
+
+<label>RFID :</label>
+<input type="text" id="rfid_display" readonly placeholder="Automatique">
+
+<label>Date de réservation :</label>
+<input type="date" 
+       name="date_reservation" 
+       min="{{ date_min }}" 
+       max="{{ date_max }}" 
+       required>
+
+<br>
+
+<button class="btn btn-primary" name="action" value="reserver">
+    Réserver
+</button>
+
+</form>
+</div>
+
+<!-- ================= MES RESERVATIONS ================= -->
+<div class="conteneur-tableau">
+<h2>Mes réservations (30 derniers jours)</h2>
+
+<table>
+<tr>
+<th>Matériel</th>
+<th>Date réservation</th>
+<th>Date limite</th>
+<th>Statut</th>
+<th>Actions</th>
+</tr>
+
+{% for r in mes_reservations %}
+<tr>
+<td>{{ r.nom_modele }}</td>
+<td>{{ r.date_reservation }}</td>
+<td>{{ r.date_limite }}</td>
+
+<td>
+{% if r.statut == 'Confirmée' %}
+<span class="badge-stock">Confirmée</span>
+{% elif r.statut == 'Annulée' %}
+<span class="badge-out">Annulée</span>
+{% elif r.statut == 'Récupérée' %}
+<span class="badge-admin">Récupérée</span>
+{% endif %}
+</td>
+
+<td class="actions">
+
+{% if r.statut == 'Confirmée' %}
+
+<!-- récupérer -->
+<form method="post">
+    <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+    <button class="btn btn-success" name="action" value="recuperer">
+        Récupérer
+    </button>
+</form>
+
+<!-- annuler -->
+<form method="post">
+    <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+    <button class="btn btn-danger" name="action" value="annuler">
+        Annuler
+    </button>
+</form>
+
+{% else %}
+-
+{% endif %}
+
+</td>
+</tr>
+{% endfor %}
+
+{% if mes_reservations|length == 0 %}
+<tr>
+<td colspan="5">Aucune réservation sur les 30 derniers jours</td>
+</tr>
+{% endif %}
+
+</table>
+</div>
+
+</div>
+
+<!-- ================= SCRIPT RFID ================= -->
+<script>
+function updateInfos() {
+    let select = document.getElementById("materiel_select");
+    let selected = select.options[select.selectedIndex];
+
+    let rfid = selected.getAttribute("data-rfid");
+
+    document.getElementById("rfid_display").value = rfid || "";
+}
+</script>
+
+</body>
