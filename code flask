@@ -1,0 +1,47 @@
+from flask import Flask, request, jsonify
+import mysql.connector
+from datetime import datetime
+import sys
+
+app = Flask(__name__)
+
+# --- CONFIGURATION VM ---
+DB_CONFIG = {
+    'host': '10.96.222.141',
+    'user': 'root',
+    'password': '1234',
+    'database': 'Projet_BTS_RFID',
+    'connect_timeout': 5  # Si la VM ne répond pas après 5s, on arrête
+}
+
+@app.route('/verifier_acces', methods=['POST'])
+def verifier_acces():
+    data = request.json
+    badge_uid = str(data.get('badge_uid')).strip()
+    print(f"\n--- Tentative de vérification pour le badge : {badge_uid} ---")
+
+    conn = None
+    try:
+        # Tentative de connexion à la VM
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+
+        # Recherche utilisateur
+        query = "SELECT id_utilisateur, nom, prenom FROM utilisateurs WHERE badge_uid = %s"
+        cursor.execute(query, (badge_uid,))
+        user = cursor.fetchone()
+
+        if user:
+            print(f"✅ Utilisateur trouvé : {user['prenom']} {user['nom']}")
+            # Insertion mouvement
+            insert_query = """
+                INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(insert_query, (1, user['id_utilisateur'], 'Entrée', datetime.now()))
+            conn.commit()
+            return jsonify({"status": "autorise", "nom": user['nom'], "prenom": user['prenom']}), 200
+
+        else:
+            print(f"⚠️ Badge {badge_uid} inconnu dans la table utilisateurs.")
+            return jsonify({"status": "refuse"}), 403
