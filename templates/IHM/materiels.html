@@ -8,7 +8,6 @@
 
 <body class="corps-tableau-de-bord">
 
-<!-- ================= SIDEBAR ================= -->
 <div class="barre-laterale">
     <h2>RFID</h2>
 
@@ -25,7 +24,6 @@
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
-<!-- ================= CONTENU ================= -->
 <div class="contenu-tableau-de-bord">
 
     <header class="entete-tableau-de-bord">
@@ -33,15 +31,15 @@
         <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
     </header>
 
-    <!-- 🔍 RECHERCHE -->
+    <!-- RECHERCHE -->
     <form method="get" class="barre-recherche">
         <input type="text" name="recherche"
-               placeholder="Rechercher un matériel ou RFID"
+               placeholder="Rechercher..."
                value="{{ recherche }}">
         <button type="submit">Rechercher</button>
     </form>
 
-    <!-- 📦 TABLEAU -->
+    <!-- TABLE -->
     <div class="conteneur-tableau">
         <table>
             <thead>
@@ -49,8 +47,7 @@
                     <th>ID</th>
                     <th>Modèle</th>
                     <th>RFID</th>
-                    <th>Statut</th>
-                    <th>Action</th>
+                    <th>État</th>
                 </tr>
             </thead>
 
@@ -61,40 +58,32 @@
                     <td>{{ m.nom_modele }}</td>
                     <td>{{ m.rfid_tag_epc }}</td>
 
-                    <!-- STATUT -->
                     <td>
-                        {% if m.stock == 1 %}
-                            <span class="statut-ok">En Stock</span>
+                        {% if m.etat == "Disponible" %}
+                            <span class="statut-ok">Disponible</span>
+                        {% elif m.etat == "Sortie" %}
+                            <span class="statut-ko">Sortie</span>
+                        {% elif m.etat == "Réservé" %}
+                            <span class="statut-reserve">Réservé</span>
+                        {% elif m.etat == "Maintenance" %}
+                            <span class="statut-maintenance">Maintenance</span>
                         {% else %}
-                            <span class="statut-ko">Sorti</span>
+                            <span>{{ m.etat }}</span>
                         {% endif %}
                     </td>
-
-                    <!-- ACTION -->
-                    <td>
-                        <form method="POST" onsubmit="return confirmer()" style="display:inline">
-                            <input type="hidden" name="action" value="confirmer_materiel">
-                            <input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
-                            <button type="submit" class="btn btn-success">
-                                Confirmer
-                            </button>
-                        </form>
-                    </td>
-
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
 
         {% if not materiels %}
-            <p style="margin-top:20px;">Aucun matériel trouvé.</p>
+            <p>Aucun matériel trouvé.</p>
         {% endif %}
     </div>
 
-    <!-- 📄 PAGINATION -->
+    <!-- PAGINATION -->
     {% if total_pages and total_pages > 1 %}
     <div class="pagination">
-
         <a href="?page=1&recherche={{ recherche }}">⏮️</a>
 
         {% if page > 1 %}
@@ -108,18 +97,10 @@
         {% endif %}
 
         <a href="?page={{ total_pages }}&recherche={{ recherche }}">⏭️</a>
-
     </div>
     {% endif %}
 
 </div>
-
-<!-- ================= JS POPUP ================= -->
-<script>
-function confirmer() {
-    return confirm("Voulez-vous vraiment changer le statut de ce matériel ?");
-}
-</script>
 
 </body>
 </html>

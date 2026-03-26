@@ -2,11 +2,9 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Matériels</title>
+    <title>Réservations</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
 </head>
-<body>
-<body class="corps-tableau-de-bord">
 
 <body class="corps-tableau-de-bord">
 
@@ -30,115 +28,114 @@
 <!-- ================= CONTENU ================= -->
 <div class="contenu-tableau-de-bord">
 
-<div class="entete-tableau-de-bord">
-    <h1>Réservations</h1>
-    <p>{{ prenom }} {{ nom }}</p>
-</div>
+    <div class="entete-tableau-de-bord">
+        <h1>Réservations</h1>
+        <p>{{ prenom }} {{ nom }}</p>
+    </div>
 
-<!-- ================= RESERVER ================= -->
-<div class="conteneur-tableau">
-<h2>Réserver un matériel</h2>
+    <!-- ================= RESERVER ================= -->
+    <div class="conteneur-tableau">
+        <h2>Réserver un matériel</h2>
 
-<form method="post" class="form-reservation">
+        <form method="post" class="form-reservation">
 
-<label>Matériel :</label>
-<select name="id_materiel" id="materiel_select" required onchange="updateInfos()">
-    <option value="">-- Choisir un matériel --</option>
-    
-    {% for m in materiels %}
-      <option 
-    	value="{{ m.id_materiel }}" 
-    	data-rfid="{{ m.rfid_tag_epc }}"
-    	data-id="{{ m.id_materiel }}">
-    	ID: {{ m.id_materiel }} - {{ m.nom_modele }}
-      </option>
-    {% endfor %}
-</select>
+            <label>Matériel :</label>
+            <select name="id_materiel" id="materiel_select" required onchange="updateInfos()">
+                <option value="">-- Choisir un matériel --</option>
 
-<label>RFID :</label>
-<input type="text" id="rfid_display" readonly placeholder="Automatique">
+                {% for m in materiels %}
+                <option 
+                    value="{{ m.id_materiel }}" 
+                    data-rfid="{{ m.rfid_tag_epc }}">
+                    ID: {{ m.id_materiel }} - {{ m.nom_modele }}
+                </option>
+                {% endfor %}
+            </select>
 
-<label>Date de réservation :</label>
-<input type="date" 
-       name="date_reservation" 
-       min="{{ date_min }}" 
-       max="{{ date_max }}" 
-       required>
+            <label>RFID :</label>
+            <input type="text" id="rfid_display" readonly placeholder="Automatique">
 
-<br>
+            <label>Date de réservation :</label>
+            <input type="date" 
+                   name="date_reservation" 
+                   min="{{ date_min }}" 
+                   max="{{ date_max }}" 
+                   required>
 
-<button class="btn btn-primary" name="action" value="reserver">
-    Réserver
-</button>
+            <br><br>
 
-</form>
-</div>
+            <button class="btn btn-primary" name="action" value="reserver">
+                Réserver
+            </button>
 
-<!-- ================= MES RESERVATIONS ================= -->
-<div class="conteneur-tableau">
-<h2>Mes réservations (30 derniers jours)</h2>
+        </form>
+    </div>
 
-<table>
-<tr>
-<th>Matériel</th>
-<th>Date réservation</th>
-<th>Date limite</th>
-<th>Statut</th>
-<th>Actions</th>
-</tr>
+    <!-- ================= MES RESERVATIONS ================= -->
+    <div class="conteneur-tableau">
+        <h2>Mes réservations (30 derniers jours)</h2>
 
-{% for r in mes_reservations %}
-<tr>
-<td>{{ r.nom_modele }}</td>
-<td>{{ r.date_reservation }}</td>
-<td>{{ r.date_limite }}</td>
+        <table>
+            <tr>
+                <th>Matériel</th>
+                <th>Date réservation</th>
+                <th>Date limite</th>
+                <th>Statut</th>
+                <th>Actions</th>
+            </tr>
 
-<td>
-{% if r.statut == 'Confirmée' %}
-<span class="badge-stock">Confirmée</span>
-{% elif r.statut == 'Annulée' %}
-<span class="badge-out">Annulée</span>
-{% elif r.statut == 'Récupérée' %}
-<span class="badge-admin">Récupérée</span>
-{% endif %}
-</td>
+            {% for r in mes_reservations %}
+            <tr>
+                <td>{{ r.nom_modele }}</td>
+                <td>{{ r.date_reservation }}</td>
+                <td>{{ r.date_limite }}</td>
 
-<td class="actions">
+                <td>
+                    {% if r.statut == 'Confirmée' %}
+                        <span class="badge-stock">Confirmée</span>
+                    {% elif r.statut == 'Annulée' %}
+                        <span class="badge-out">Annulée</span>
+                    {% elif r.statut == 'Récupérée' %}
+                        <span class="badge-admin">Récupérée</span>
+                    {% endif %}
+                </td>
 
-{% if r.statut == 'Confirmée' %}
+                <td class="actions">
 
-<!-- récupérer -->
-<form method="post">
-    <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-    <button class="btn btn-success" name="action" value="recuperer">
-        Récupérer
-    </button>
-</form>
+                    {% if r.statut == 'Confirmée' %}
 
-<!-- annuler -->
-<form method="post">
-    <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-    <button class="btn btn-danger" name="action" value="annuler">
-        Annuler
-    </button>
-</form>
+                        <!-- Récupérer -->
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+                            <button class="btn btn-success" name="action" value="recuperer">
+                                Récupérer
+                            </button>
+                        </form>
 
-{% else %}
--
-{% endif %}
+                        <!-- Annuler -->
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+                            <button class="btn btn-danger" name="action" value="annuler">
+                                Annuler
+                            </button>
+                        </form>
 
-</td>
-</tr>
-{% endfor %}
+                    {% else %}
+                        -
+                    {% endif %}
 
-{% if mes_reservations|length == 0 %}
-<tr>
-<td colspan="5">Aucune réservation sur les 30 derniers jours</td>
-</tr>
-{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
 
-</table>
-</div>
+            {% if mes_reservations|length == 0 %}
+            <tr>
+                <td colspan="5">Aucune réservation sur les 30 derniers jours</td>
+            </tr>
+            {% endif %}
+
+        </table>
+    </div>
 
 </div>
 
@@ -155,3 +152,4 @@ function updateInfos() {
 </script>
 
 </body>
+</html>

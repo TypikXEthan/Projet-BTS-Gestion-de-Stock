@@ -13,32 +13,41 @@
     <a href="/materiels">Matériels</a>
     <a href="/historique">Historique</a>
     <a href="/utilisateurs">Utilisateurs</a>
+
     {% if session["admin"] == 1 %}
-    <a href="/admin" class="admin-btn"> Administration</a>
+    <a href="/admin" class="admin-btn">Administration</a>
     {% endif %}
+
     <a href="/reservations">Réservations</a>
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
 <div class="contenu-tableau-de-bord">
+
     <header class="entete-tableau-de-bord">
         <h1>Tableau de bord</h1>
         <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
     </header>
 
+    <!-- ================= STATISTIQUES ================= -->
     <div class="statistiques">
+
         <div class="carte bleu">
-            <h3>Matériels en stock</h3>
+            <h3>Matériels disponibles</h3>
             <p>{{ nb_stock }}</p>
         </div>
+
         <div class="carte bleu-clair">
             <h3>Matériels sortis</h3>
             <p>{{ nb_sorti }}</p>
         </div>
+
     </div>
 
+    <!-- ================= MOUVEMENTS ================= -->
     <div class="conteneur-tableau">
         <h3>Derniers mouvements</h3>
+
         <table>
             <tr>
                 <th>Matériel</th>
@@ -46,6 +55,7 @@
                 <th>Mouvement</th>
                 <th>Date</th>
             </tr>
+
             {% for m in mouvements %}
             <tr>
                 <td>{{ m.nom_modele }}</td>
@@ -55,10 +65,12 @@
             </tr>
             {% endfor %}
         </table>
+
         {% if not mouvements %}
         <p>Aucun mouvement récent.</p>
         {% endif %}
     </div>
+
 </div>
 </body>
 </html>

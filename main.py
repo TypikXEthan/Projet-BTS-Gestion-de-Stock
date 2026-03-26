@@ -61,12 +61,12 @@ def dashboard():
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    # Matériels en stock
-    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE stock = 1")
+    # Matériels disponibles
+    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE etat = 'Disponible'")
     nb_stock = cursor.fetchone()["total"]
 
     # Matériels sortis
-    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE stock = 0")
+    cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE etat = 'Sortie'")
     nb_sorti = cursor.fetchone()["total"]
 
     # Derniers mouvements (10 derniers)
@@ -86,58 +86,24 @@ def dashboard():
     db.close()
 
     return render_template(
-        "IHM/dashboard.html",  # Assurez-vous que le template s'appelle dashboard.html
+        "IHM/dashboard.html",
         nb_stock=nb_stock,
         nb_sorti=nb_sorti,
         mouvements=mouvements,
         nom=session["nom"],
         prenom=session["prenom"]
     )
+
 # -------------------------------
 # MATERIELS
 # -------------------------------
-@app.route("/materiels", methods=["GET", "POST"])
+@app.route("/materiels")
 def materiels():
     if "id_user" not in session:
         return redirect("/")
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
-    # =========================
-    # ACTIONS (POST)
-    # =========================
-    if request.method == "POST":
-        action = request.form.get("action")
-        id_materiel = request.form.get("id_materiel")
-
-        if action == "confirmer_materiel" and id_materiel:
-
-            # 🔍 récupérer état actuel
-            cursor.execute("SELECT stock FROM materiel_stock WHERE id_materiel=%s", (id_materiel,))
-            materiel = cursor.fetchone()
-
-            if materiel:
-                ancien_stock = materiel["stock"]
-                nouveau_stock = 0 if ancien_stock == 1 else 1
-
-                # 🔄 UPDATE stock
-                cursor.execute("""
-                    UPDATE materiel_stock 
-                    SET stock=%s 
-                    WHERE id_materiel=%s
-                """, (nouveau_stock, id_materiel))
-
-                # 🧠 déterminer le type de mouvement
-                type_mouvement = "Entrée" if nouveau_stock == 1 else "Sortie"
-
-                # 📝 INSERT mouvement
-                cursor.execute("""
-                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                    VALUES (%s, %s, %s, NOW())
-                """, (id_materiel, session["id_user"], type_mouvement))
-
-                db.commit()
 
     # =========================
     # RECHERCHE
@@ -169,10 +135,6 @@ def materiels():
     cursor.execute(query, params + [limit, offset])
     materiels = cursor.fetchall()
 
-    # 🎯 convertir stock → texte
-    for m in materiels:
-        m["statut"] = "En Stock" if m["stock"] == 1 else "Sorti"
-
     cursor.close()
     db.close()
 
@@ -185,8 +147,6 @@ def materiels():
         prenom=session["prenom"],
         nom=session["nom"]
     )
-
-
 
 # --------------------------
 #Historique
@@ -277,13 +237,15 @@ def reservations():
 
     for r in expired:
         cursor.execute("""
-            UPDATE reservations SET statut='Annulée'
+            UPDATE reservations 
+            SET statut='Annulée'
             WHERE id_reservation=%s
         """, (r["id_reservation"],))
 
         cursor.execute("""
             UPDATE materiel_stock
-            SET id_utilisateur_actuel=NULL
+            SET id_utilisateur_actuel=NULL,
+                etat='disponible'
             WHERE id_materiel=%s
         """, (r["id_materiel"],))
 
@@ -320,19 +282,20 @@ def reservations():
 
                 # 🔍 check matériel
                 cursor.execute("""
-                    SELECT stock, reservable, actif, id_utilisateur_actuel
+                    SELECT etat, reservable, actif, id_utilisateur_actuel
                     FROM materiel_stock
                     WHERE id_materiel=%s
                 """, (id_materiel,))
                 mat = cursor.fetchone()
 
-                if mat and mat["reservable"] == 1 and mat["actif"] == 1:
+                if mat and mat["reservable"] == 1 and mat["actif"] == 1 and mat["etat"] == "disponible":
 
                     # 🔒 si aujourd’hui → bloquer direct
                     if date_resa.date() == now.date():
                         cursor.execute("""
                             UPDATE materiel_stock
-                            SET id_utilisateur_actuel=%s
+                            SET id_utilisateur_actuel=%s,
+                                etat='reserve'
                             WHERE id_materiel=%s
                         """, (user_id, id_materiel))
 
@@ -367,7 +330,8 @@ def reservations():
 
                 cursor.execute("""
                     UPDATE materiel_stock
-                    SET id_utilisateur_actuel=NULL
+                    SET id_utilisateur_actuel=NULL,
+                        etat='disponible'
                     WHERE id_materiel=%s
                 """, (res["id_materiel"],))
 
@@ -391,7 +355,7 @@ def reservations():
 
                 cursor.execute("""
                     UPDATE materiel_stock 
-                    SET stock=0
+                    SET etat='indisponible'
                     WHERE id_materiel=%s
                 """, (id_mat,))
 
@@ -402,7 +366,8 @@ def reservations():
                 """, (id_reservation,))
 
                 cursor.execute("""
-                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
+                    INSERT INTO mouvements 
+                    (id_materiel, id_utilisateur, type_mouvement, date_heure)
                     VALUES (%s,%s,'Sortie',NOW())
                 """, (id_mat, user_id))
 
@@ -412,19 +377,21 @@ def reservations():
     # GET
     # =========================
 
-    # 📅 limites calendrier
     date_min = date.today().isoformat()
     date_max = (date.today() + timedelta(days=7)).isoformat()
 
-    # 📦 matériels dispo
+    # 📦 matériels disponibles
     cursor.execute("""
         SELECT id_materiel, nom_modele, rfid_tag_epc
         FROM materiel_stock
-        WHERE stock=1 AND reservable=1 AND actif=1 AND id_utilisateur_actuel IS NULL
+        WHERE etat='disponible'
+        AND reservable=1
+        AND actif=1
+        AND id_utilisateur_actuel IS NULL
     """)
     materiels = cursor.fetchall()
 
-    # 📋 mes réservations (30 derniers jours)
+    # 📋 mes réservations
     cursor.execute("""
         SELECT r.*, ms.nom_modele
         FROM reservations r
@@ -448,6 +415,7 @@ def reservations():
         prenom=session["prenom"],
         admin=session.get("admin", 0)
     )
+
 
 # -------------------------------
 # ADMINISTRATION
@@ -483,8 +451,9 @@ def admin():
         # ❌ SUPPRIMER UTILISATEUR
         # =========================
         elif action == "supprimer_utilisateur":
-            cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur=%s",
-                           (request.form["id"],))
+            cursor.execute("""
+                DELETE FROM utilisateurs WHERE id_utilisateur=%s
+            """, (request.form["id"],))
             db.commit()
 
         # =========================
@@ -492,7 +461,9 @@ def admin():
         # =========================
         elif action == "toggle_admin":
             cursor.execute("""
-                UPDATE utilisateurs SET admin=%s WHERE id_utilisateur=%s
+                UPDATE utilisateurs 
+                SET admin=%s 
+                WHERE id_utilisateur=%s
             """, (request.form["nouveau_statut"], request.form["id"]))
             db.commit()
 
@@ -502,7 +473,9 @@ def admin():
         elif action == "changer_mdp":
             new_mdp = hashlib.sha256(request.form["nouveau_mdp"].encode()).hexdigest()
             cursor.execute("""
-                UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s
+                UPDATE utilisateurs 
+                SET mot_de_passe=%s 
+                WHERE id_utilisateur=%s
             """, (new_mdp, request.form["id"]))
             db.commit()
 
@@ -511,44 +484,37 @@ def admin():
         # =========================
         elif action == "ajouter_materiel":
             nom_modele = request.form["nom_modele"]
+            id_materiel = request.form["id_materiel"]
             rfid = request.form["rfid_tag_epc"]
-            statut = request.form["statut"]
-
-            stock = 1 if statut == "En Stock" else 0
+            etat = request.form["etat"]
 
             cursor.execute("""
-                INSERT INTO materiel_stock (nom_modele, rfid_tag_epc, stock)
-                VALUES (%s,%s,%s)
-            """, (nom_modele, rfid, stock))
+                INSERT INTO materiel_stock 
+                (id_materiel, nom_modele, rfid_tag_epc, etat, id_utilisateur_actuel, actif, reservable)
+                VALUES (%s,%s,%s,%s,NULL,1,1)
+            """, (id_materiel, nom_modele, rfid, etat))
             db.commit()
 
         # =========================
         # ❌ SUPPRIMER MATERIEL
         # =========================
         elif action == "supprimer_materiel":
-            cursor.execute("DELETE FROM materiel_stock WHERE id_materiel=%s",
-                           (request.form["id_materiel"],))
+            cursor.execute("""
+                DELETE FROM materiel_stock WHERE id_materiel=%s
+            """, (request.form["id_materiel"],))
             db.commit()
 
         # =========================
-        # 🔄 CHANGER STATUT (STOCK)
+        # 🔄 CHANGER ETAT MATERIEL
         # =========================
         elif action == "changer_statut_materiel":
-            statut = request.form["nouveau_statut"]
-            stock = 1 if statut == "En Stock" else 0
+            etat = request.form["nouveau_statut"]
 
             cursor.execute("""
-                UPDATE materiel_stock SET stock=%s WHERE id_materiel=%s
-            """, (stock, request.form["id_materiel"]))
-
-            # 🔥 ajouter mouvement
-            type_mouvement = "Entrée" if stock == 1 else "Sortie"
-
-            cursor.execute("""
-                INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                VALUES (%s,%s,%s,NOW())
-            """, (request.form["id_materiel"], session["id_user"], type_mouvement))
-
+                UPDATE materiel_stock 
+                SET etat=%s
+                WHERE id_materiel=%s
+            """, (etat, request.form["id_materiel"]))
             db.commit()
 
     # =========================
@@ -560,7 +526,7 @@ def admin():
     cursor.execute("SELECT * FROM materiel_stock")
     materiels = cursor.fetchall()
 
-    # 🔥 ajouter statut + dernier mouvement
+    # Derniers mouvements
     cursor.execute("""
         SELECT id_materiel, type_mouvement, date_heure
         FROM mouvements
@@ -574,7 +540,6 @@ def admin():
             last_move[m["id_materiel"]] = f"{m['type_mouvement']} le {m['date_heure']}"
 
     for m in materiels:
-        m["statut"] = "En Stock" if m["stock"] == 1 else "Sorti"
         m["dernier_mouvement"] = last_move.get(m["id_materiel"], "-")
 
     cursor.close()
@@ -587,7 +552,6 @@ def admin():
         nom=session["nom"],
         prenom=session["prenom"]
     )
-
 
 # -------------------------------
 # LOGOUT

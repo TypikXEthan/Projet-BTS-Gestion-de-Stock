@@ -5,6 +5,7 @@
     <title>Administration</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
 </head>
+
 <body class="corps-tableau-de-bord">
 
 <div class="barre-laterale">
@@ -13,132 +14,163 @@
     <a href="/materiels">Matériels</a>
     <a href="/historique">Historique</a>
     <a href="/utilisateurs">Utilisateurs</a>
-    {% if session["admin"] == 1 %}
-        <a href="/admin" class="actif">Administration</a>
-    {% endif %}
+    <a href="/admin" class="actif">Administration</a>
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
 <div class="admin-container">
 
-    <h1>Administration</h1>
-    <p class="admin-user">Connecté : <strong>{{ prenom }} {{ nom }}</strong></p>
-    <a href="{{ url_for('dashboard') }}" class="btn-retour">Retour au Dashboard</a>
+<h1>Administration</h1>
+<p>Connecté : <strong>{{ prenom }} {{ nom }}</strong></p>
 
-    <!-- AJOUT UTILISATEUR -->
-    <div class="admin-card">
-        <h2>Créer un utilisateur</h2>
-        <form method="POST">
-            <input type="hidden" name="action" value="creer_utilisateur">
-            <input type="text" name="nom" placeholder="Nom" required>
-            <input type="text" name="prenom" placeholder="Prénom" required>
-            <input type="text" name="identifiant" placeholder="Identifiant" required>
-	    <select name="role" required>
-    	    <option value="">-- Choisir un rôle --</option>
-    	    <option value="Professeur">Professeur</option>
-    	    <option value="Élève">Élève</option>
-    		<option value="Admin">Admin</option>
-		</select> 
-            <input type="password" name="mot_de_passe" placeholder="Mot de passe" required>
-            <button type="submit" class="btn btn-success">Créer</button>
-        </form>
-    </div>
+<a href="{{ url_for('dashboard') }}" class="btn-retour">Retour</a>
 
-    <!-- LISTE UTILISATEURS -->
-    <div class="admin-card">
-        <h2>Liste des utilisateurs</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Admin</th><th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for u in utilisateurs %}
-                <tr>
-                    <td>{{ u.prenom }} {{ u.nom }}</td>
-                    <td>{{ u.utilisateur }}</td>
-                    <td>{{ u.role }}</td>
-                    <td>{% if u.admin==1 %}<span class="badge-admin">Oui</span>{% else %}<span class="badge-user">Non</span>{% endif %}</td>
-                    <td class="actions">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="action" value="supprimer_utilisateur">
-                            <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
-                            <button class="btn btn-danger">Supprimer</button>
-                        </form>
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="action" value="toggle_admin">
-                            <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
-                            <input type="hidden" name="nouveau_statut" value="{{ 0 if u.admin==1 else 1 }}">
-                            <button class="btn btn-warning">{% if u.admin==1 %} Retirer Admin {% else %} Mettre Admin {% endif %}</button>
-                        </form>
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="action" value="changer_mdp">
-                            <input type="hidden" name="id" value="{{ u.id_utilisateur }}">
-                            <input type="password" name="nouveau_mdp" placeholder="Nouveau MDP" required>
-                            <button class="btn btn-primary">Changer MDP</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+<!-- ================= UTILISATEUR ================= -->
+<div class="admin-card">
+<h2>Créer un utilisateur</h2>
 
-    <!-- AJOUT MATERIEL -->
-    <div class="admin-card">
-        <h2>Ajouter du matériel</h2>
-        <form method="POST">
-            <input type="hidden" name="action" value="ajouter_materiel">
-            <input type="text" name="nom_modele" placeholder="Nom du modèle" required>
-            <input type="text" name="id_materiel" placeholder="ID matériel (LV_XXXX)" required>
-            <input type="text" name="rfid_tag_epc" placeholder="RFID EPC" required>
-            <select name="statut" required>
-                <option value="En Stock">En Stock</option>
-                <option value="Sorti">Sorti</option>
-            </select>
-            <button type="submit" class="btn btn-success">Ajouter</button>
-        </form>
-    </div>
+<form method="POST">
+    <input type="hidden" name="action" value="creer_utilisateur">
 
-    <!-- LISTE MATERIEL -->
-    <div class="admin-card">
-        <h2>Liste du matériel</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Modèle</th><th>ID Matériel</th><th>RFID</th><th>Statut</th><th>Dernier mouvement</th><th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for m in materiels %}
-                <tr>
-                    <td>{{ m.nom_modele }}</td>
-                    <td>{{ m.id_materiel }}</td>
-                    <td>{{ m.rfid_tag_epc }}</td>
-                    <td>{% if m.statut=="En Stock" %}<span class="badge-stock">En Stock</span>{% else %}<span class="badge-out">Sorti</span>{% endif %}</td>
-                    <td>{{ m.dernier_mouvement or "-" }}</td>
-                    <td class="actions">
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="action" value="supprimer_materiel">
-                            <input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
-                            <button class="btn btn-danger">Supprimer</button>
-                        </form>
-                        <form method="POST" style="display:inline">
-                            <input type="hidden" name="action" value="changer_statut_materiel">
-                            <input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
-                            <select name="nouveau_statut" required>
-                                <option value="En Stock" {% if m.statut=="En Stock" %}selected{% endif %}>En Stock</option>
-                                <option value="Sorti" {% if m.statut=="Sorti" %}selected{% endif %}>Sorti</option>
-                            </select>
-                            <button class="btn btn-warning">Changer</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <input type="text" name="nom" placeholder="Nom" required>
+    <input type="text" name="prenom" placeholder="Prénom" required>
+    <input type="text" name="identifiant" placeholder="Identifiant" required>
+
+    <select name="role" required>
+        <option value="">-- Rôle --</option>
+        <option value="Professeur">Professeur</option>
+        <option value="Élève">Élève</option>
+        <option value="Admin">Admin</option>
+    </select>
+
+    <input type="password" name="mot_de_passe" placeholder="Mot de passe" required>
+
+    <button class="btn btn-success">Créer</button>
+</form>
+</div>
+
+<!-- ================= LISTE USERS ================= -->
+<div class="admin-card">
+<h2>Utilisateurs</h2>
+
+<table>
+<tr>
+<th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Admin</th><th>Actions</th>
+</tr>
+
+{% for u in utilisateurs %}
+<tr>
+<td>{{ u.prenom }} {{ u.nom }}</td>
+<td>{{ u.utilisateur }}</td>
+<td>{{ u.role }}</td>
+<td>{% if u.admin==1 %}Oui{% else %}Non{% endif %}</td>
+<td>
+
+<form method="POST" style="display:inline">
+<input type="hidden" name="action" value="supprimer_utilisateur">
+<input type="hidden" name="id" value="{{ u.id_utilisateur }}">
+<button class="btn btn-danger">Supprimer</button>
+</form>
+
+<form method="POST" style="display:inline">
+<input type="hidden" name="action" value="toggle_admin">
+<input type="hidden" name="id" value="{{ u.id_utilisateur }}">
+<input type="hidden" name="nouveau_statut" value="{{ 0 if u.admin==1 else 1 }}">
+<button class="btn btn-warning">
+{% if u.admin==1 %}Retirer Admin{% else %}Mettre Admin{% endif %}
+</button>
+</form>
+
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+
+<!-- ================= AJOUT MATERIEL ================= -->
+<div class="admin-card">
+<h2>Ajouter matériel</h2>
+
+<form method="POST">
+    <input type="hidden" name="action" value="ajouter_materiel">
+
+    <input type="text" name="id_materiel" placeholder="ID matériel" required>
+    <input type="text" name="nom_modele" placeholder="Modèle" required>
+    <input type="text" name="rfid_tag_epc" placeholder="RFID" required>
+
+    <select name="etat" required>
+        <option value="disponible">Disponible</option>
+        <option value="reserve">Réservé</option>
+        <option value="indisponible">Indisponible</option>
+        <option value="maintenance">Maintenance</option>
+    </select>
+
+    <button class="btn btn-success">Ajouter</button>
+</form>
+</div>
+
+<!-- ================= LISTE MATERIEL ================= -->
+<div class="admin-card">
+<h2>Matériels</h2>
+
+<table>
+<tr>
+<th>Modèle</th>
+<th>ID</th>
+<th>RFID</th>
+<th>État</th>
+<th>Dernier mouvement</th>
+<th>Actions</th>
+</tr>
+
+{% for m in materiels %}
+<tr>
+<td>{{ m.nom_modele }}</td>
+<td>{{ m.id_materiel }}</td>
+<td>{{ m.rfid_tag_epc }}</td>
+
+<td>
+{% if m.etat == "disponible" %}
+<span class="badge-stock">Disponible</span>
+{% elif m.etat == "reserve" %}
+<span class="badge-warning">Réservé</span>
+{% elif m.etat == "indisponible" %}
+<span class="badge-out">Indisponible</span>
+{% elif m.etat == "maintenance" %}
+<span class="badge-admin">Maintenance</span>
+{% endif %}
+</td>
+
+<td>{{ m.dernier_mouvement }}</td>
+
+<td>
+
+<form method="POST" style="display:inline">
+<input type="hidden" name="action" value="supprimer_materiel">
+<input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
+<button class="btn btn-danger">Supprimer</button>
+</form>
+
+<form method="POST" style="display:inline">
+<input type="hidden" name="action" value="changer_statut_materiel">
+<input type="hidden" name="id_materiel" value="{{ m.id_materiel }}">
+
+<select name="nouveau_statut">
+    <option value="disponible" {% if m.etat=="disponible" %}selected{% endif %}>Disponible</option>
+    <option value="reserve" {% if m.etat=="reserve" %}selected{% endif %}>Réservé</option>
+    <option value="indisponible" {% if m.etat=="indisponible" %}selected{% endif %}>Indisponible</option>
+    <option value="maintenance" {% if m.etat=="maintenance" %}selected{% endif %}>Maintenance</option>
+</select>
+
+<button class="btn btn-warning">Modifier</button>
+</form>
+
+</td>
+</tr>
+{% endfor %}
+</table>
+
+</div>
 
 </div>
 
