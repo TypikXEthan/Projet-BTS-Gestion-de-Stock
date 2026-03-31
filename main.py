@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, session,flash
 import mysql.connector
 import hashlib
 from datetime import datetime, timedelta
+import time
 
 app = Flask(__name__)
 app.secret_key = "cle_secrete_bts_rfid"  # clé de session
@@ -14,16 +15,32 @@ def get_db():
         password="1234",
         database="Projet_BTS_RFID"
     )
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
+    # On définit la durée d'activité à 60 minutes
+    app.permanent_session_lifetime = timedelta(minutes=60)
 
 # -------------------------------
 # LOGIN
 # -------------------------------
 @app.route("/", methods=["GET", "POST"])
 def login():
+    # 1. Vérifier si l'utilisateur est actuellement sous le coup d'une attente
+    if "bloque_jusqua" in session:
+        temps_restant = int(session["bloque_jusqua"] - time.time())
+        if temps_restant > 0:
+            return render_template("IHM/login.html", 
+                                   erreur=f"Trop de tentatives. Réessayez dans {temps_restant} secondes.",
+                                   attente=temps_restant) # On envoie le temps au HTML
+        else:
+            # Le temps est écoulé, on réinitialise
+            session.pop("bloque_jusqua", None)
+            session["tentatives"] = 0
+
     if request.method == "POST":
         utilisateur = request.form["utilisateur"]
         mot_de_passe = request.form["mot_de_passe"]
-
         mdp_hash = hashlib.sha256(mot_de_passe.encode()).hexdigest()
 
         db = get_db()
@@ -38,6 +55,10 @@ def login():
         db.close()
 
         if user:
+            # Succès : on nettoie la session
+            session.pop("tentatives", None)
+            session.pop("bloque_jusqua", None)
+            
             session["id_user"] = user["id_utilisateur"]
             session["utilisateur"] = user["utilisateur"]
             session["nom"] = user["nom"]
@@ -46,10 +67,20 @@ def login():
             session["admin"] = user["admin"]
             return redirect("/dashboard")
         else:
-            return render_template("IHM/login.html", erreur="Identifiants incorrects")
+            # Échec : on incrémente le compteur
+            session["tentatives"] = session.get("tentatives", 0) + 1
+            
+            if session["tentatives"] >= 3:
+                # On bloque pour 90 secondes à partir de maintenant
+                session["bloque_jusqua"] = time.time() + 90
+                return render_template("IHM/login.html", 
+                                       erreur="Trop d'échecs. Compte bloqué pour 90 secondes.",
+                                       attente=90)
+            
+            return render_template("IHM/login.html", 
+                                   erreur=f"Identifiants incorrects ({session['tentatives']}/3)")
 
     return render_template("IHM/login.html")
-
 # -------------------------------
 # DASHBOARD
 # -------------------------------
@@ -156,32 +187,50 @@ def historique():
     if "id_user" not in session:
         return redirect("/")
 
+    # 1. On récupère ce que l'utilisateur a tapé (si vide, on aura une chaîne vide)
+    recherche = request.args.get('recherche', '').strip()
+
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    # Récupérer tous les mouvements avec infos utilisateur + matériel
-    cursor.execute("""
+    # 2. On prépare la base de la requête
+    sql = """
         SELECT m.id_mouvement, m.type_mouvement, m.date_heure,
                ms.nom_modele,
                u.nom, u.prenom
         FROM mouvements m
         LEFT JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
         LEFT JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
-        ORDER BY m.date_heure DESC
-    """)
+    """
+
+    # 3. On ajoute le filtre si une recherche est présente
+    if recherche:
+        sql += """ 
+            WHERE ms.nom_modele LIKE %s 
+            OR u.nom LIKE %s 
+            OR u.prenom LIKE %s 
+            OR m.type_mouvement LIKE %s
+        """
+        params = (f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", f"%{recherche}%")
+        sql += " ORDER BY m.date_heure DESC"
+        cursor.execute(sql, params)
+    else:
+        # Requête classique sans filtre
+        sql += " ORDER BY m.date_heure DESC"
+        cursor.execute(sql)
 
     mouvements = cursor.fetchall()
-
     cursor.close()
     db.close()
 
+    # 4. TRÈS IMPORTANT : On renvoie 'recherche' au HTML pour pas que la barre se vide
     return render_template(
         "IHM/historique.html",
         mouvements=mouvements,
         nom=session["nom"],
-        prenom=session["prenom"]
+        prenom=session["prenom"],
+        recherche=recherche # On le rajoute ici
     )
-
 
 # -------------------------------
 # UTILISATEURS
@@ -431,127 +480,248 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        # =========================
-        # 👤 CREER UTILISATEUR
-        # =========================
+        # --- CRÉER UTILISATEUR ---
         if action == "creer_utilisateur":
-            nom = request.form["nom"]
-            prenom = request.form["prenom"]
-            identifiant = request.form["identifiant"]
-            role = request.form["role"]
-            mdp = hashlib.sha256(request.form["mot_de_passe"].encode()).hexdigest()
-
             cursor.execute("""
-                INSERT INTO utilisateurs (nom, prenom, utilisateur, role, mot_de_passe, admin)
-                VALUES (%s,%s,%s,%s,%s,0)
-            """, (nom, prenom, identifiant, role, mdp))
+                INSERT INTO utilisateurs (utilisateur, mot_de_passe, badge_uid, nom, prenom, email, telephone, role, admin) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (request.form.get("utilisateur"), request.form.get("mot_de_passe"), 
+                  request.form.get("badge_uid"), request.form.get("nom"), 
+                  request.form.get("prenom"), request.form.get("email"), 
+                  request.form.get("telephone"), request.form.get("role"), 
+                  request.form.get("admin_status")))
             db.commit()
+            flash("Utilisateur créé avec succès", "success")
 
-        # =========================
-        # ❌ SUPPRIMER UTILISATEUR
-        # =========================
-        elif action == "supprimer_utilisateur":
-            cursor.execute("""
-                DELETE FROM utilisateurs WHERE id_utilisateur=%s
-            """, (request.form["id"],))
-            db.commit()
-
-        # =========================
-        # 🔥 TOGGLE ADMIN
-        # =========================
-        elif action == "toggle_admin":
-            cursor.execute("""
-                UPDATE utilisateurs 
-                SET admin=%s 
-                WHERE id_utilisateur=%s
-            """, (request.form["nouveau_statut"], request.form["id"]))
-            db.commit()
-
-        # =========================
-        # 🔑 CHANGER MOT DE PASSE
-        # =========================
-        elif action == "changer_mdp":
-            new_mdp = hashlib.sha256(request.form["nouveau_mdp"].encode()).hexdigest()
-            cursor.execute("""
-                UPDATE utilisateurs 
-                SET mot_de_passe=%s 
-                WHERE id_utilisateur=%s
-            """, (new_mdp, request.form["id"]))
-            db.commit()
-
-        # =========================
-        # 📦 AJOUT MATERIEL
-        # =========================
+        # --- CRÉER MATÉRIEL ---
         elif action == "ajouter_materiel":
-            nom_modele = request.form["nom_modele"]
-            id_materiel = request.form["id_materiel"]
-            rfid = request.form["rfid_tag_epc"]
-            etat = request.form["etat"]
-
             cursor.execute("""
-                INSERT INTO materiel_stock 
-                (id_materiel, nom_modele, rfid_tag_epc, etat, id_utilisateur_actuel, actif, reservable)
-                VALUES (%s,%s,%s,%s,NULL,1,1)
-            """, (id_materiel, nom_modele, rfid, etat))
+                INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
+                VALUES (%s, %s, %s, %s, 1, 1)
+            """, (request.form.get("id_inventaire"), request.form.get("nom_modele"), 
+                  request.form.get("rfid_tag"), request.form.get("etat")))
             db.commit()
+            flash("Matériel ajouté au stock", "success")
 
-        # =========================
-        # ❌ SUPPRIMER MATERIEL
-        # =========================
-        elif action == "supprimer_materiel":
-            cursor.execute("""
-                DELETE FROM materiel_stock WHERE id_materiel=%s
-            """, (request.form["id_materiel"],))
-            db.commit()
-
-        # =========================
-        # 🔄 CHANGER ETAT MATERIEL
-        # =========================
-        elif action == "changer_statut_materiel":
-            etat = request.form["nouveau_statut"]
-
+        # --- MODIFIER MATÉRIEL + MOUVEMENT ---
+        elif action == "modifier_materiel_complet":
+            id_mat = request.form.get("id_materiel")
+            nouveau_statut = request.form.get("nouveau_statut")
+            dest_id = request.form.get("id_utilisateur_actuel")
+            dest_id = None if dest_id == "" else dest_id
+            
             cursor.execute("""
                 UPDATE materiel_stock 
-                SET etat=%s
+                SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s 
                 WHERE id_materiel=%s
-            """, (etat, request.form["id_materiel"]))
+            """, (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), 
+                  nouveau_statut, dest_id, id_mat))
+            
+            cursor.execute("""
+                INSERT INTO mouvements (id_materiel, id_utilisateur, id_utilisateur_destinataire, type_mouvement, date_heure)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (id_mat, session['id_user'], dest_id, nouveau_statut, datetime.now()))
+            
+            db.commit()
+            flash("Mise à jour effectuée", "success")
+
+    # Données pour les tableaux
+    cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
+    utilisateurs = cursor.fetchall()
+    cursor.execute("""
+        SELECT m.*, u.nom as nom_user, u.prenom as prenom_user 
+        FROM materiel_stock m 
+        LEFT JOIN utilisateurs u ON m.id_utilisateur_actuel = u.id_utilisateur
+    """)
+    materiels = cursor.fetchall()
+    cursor.close()
+    db.close()
+    return render_template("IHM/admin.html", utilisateurs=utilisateurs, materiels=materiels, 
+                           nom=session.get("nom"), prenom=session.get("prenom"))
+
+#-------------------
+#prets
+#-------------------
+@app.route("/pret", methods=["GET", "POST"])
+def pret():
+    if "id_user" not in session:
+        return redirect("/")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    user_id = session["id_user"]
+
+    # =========================
+    # ACTIONS
+    # =========================
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        # 🔵 FAIRE UNE DEMANDE
+        if action == "demande":
+            id_materiel = request.form["id_materiel"]
+            id_destinataire = request.form["id_destinataire"]
+
+            cursor.execute("""
+                INSERT INTO prets (id_materiel, id_preteur, id_emprunteur)
+                VALUES (%s,%s,%s)
+            """, (id_materiel, user_id, id_destinataire))
+
+            db.commit()
+
+        # 🟢 ACCEPTER UNE DEMANDE
+        elif action == "accepter":
+            id_pret = request.form["id_pret"]
+
+            # récupérer infos du prêt
+            cursor.execute("""
+                SELECT id_materiel, id_emprunteur
+                FROM prets
+                WHERE id_pret=%s
+            """, (id_pret,))
+            pret = cursor.fetchone()
+
+            if pret:
+                # transfert du matériel
+                cursor.execute("""
+                    UPDATE materiel_stock
+                    SET id_utilisateur_actuel=%s,
+                        etat='indisponible'
+                    WHERE id_materiel=%s
+                """, (pret["id_emprunteur"], pret["id_materiel"]))
+
+                # mise à jour du prêt
+                cursor.execute("""
+                    UPDATE prets
+                    SET statut='accepte',
+                        date_validation=NOW()
+                    WHERE id_pret=%s
+                """, (id_pret,))
+
+                db.commit()
+
+        # 🔴 REFUSER UNE DEMANDE
+        elif action == "refuser":
+            id_pret = request.form["id_pret"]
+
+            cursor.execute("""
+                UPDATE prets
+                SET statut='refuse',
+                    date_validation=NOW()
+                WHERE id_pret=%s
+            """, (id_pret,))
+
             db.commit()
 
     # =========================
-    # 📊 RECUP DATA
+    # DATA
     # =========================
-    cursor.execute("SELECT * FROM utilisateurs")
+
+    # 📦 matériels que je possède
+    cursor.execute("""
+        SELECT id_materiel, nom_modele
+        FROM materiel_stock
+        WHERE id_utilisateur_actuel=%s
+    """, (user_id,))
+    mes_materiels = cursor.fetchall()
+
+    # 👥 autres utilisateurs
+    cursor.execute("""
+        SELECT id_utilisateur, nom, prenom
+        FROM utilisateurs
+        WHERE id_utilisateur != %s
+    """, (user_id,))
     utilisateurs = cursor.fetchall()
 
-    cursor.execute("SELECT * FROM materiel_stock")
-    materiels = cursor.fetchall()
-
-    # Derniers mouvements
+    # 📥 demandes reçues (moins de 1 mois)
     cursor.execute("""
-        SELECT id_materiel, type_mouvement, date_heure
-        FROM mouvements
-        ORDER BY date_heure DESC
-    """)
-    mouvements = cursor.fetchall()
+        SELECT p.*, m.nom_modele, u.nom, u.prenom
+        FROM prets p
+        JOIN materiel_stock m ON p.id_materiel = m.id_materiel
+        JOIN utilisateurs u ON p.id_preteur = u.id_utilisateur
+        WHERE p.id_emprunteur=%s
+        AND p.statut='en_attente'
+        AND p.date_demande >= DATE_SUB(NOW(), INTERVAL 1 MONTH)
+    """, (user_id,))
+    demandes_recues = cursor.fetchall()
 
-    last_move = {}
-    for m in mouvements:
-        if m["id_materiel"] not in last_move:
-            last_move[m["id_materiel"]] = f"{m['type_mouvement']} le {m['date_heure']}"
-
-    for m in materiels:
-        m["dernier_mouvement"] = last_move.get(m["id_materiel"], "-")
+    # 📤 demandes envoyées (moins de 1 mois)
+    cursor.execute("""
+        SELECT p.*, m.nom_modele, u.nom, u.prenom
+        FROM prets p
+        JOIN materiel_stock m ON p.id_materiel = m.id_materiel
+        JOIN utilisateurs u ON p.id_emprunteur = u.id_utilisateur
+        WHERE p.id_preteur=%s
+        AND p.date_demande >= DATE_SUB(NOW(), INTERVAL 1 MONTH)
+        ORDER BY p.date_demande DESC
+    """, (user_id,))
+    demandes_envoyees = cursor.fetchall()
 
     cursor.close()
     db.close()
 
     return render_template(
-        "IHM/admin.html",
+        "IHM/pret.html",
+        mes_materiels=mes_materiels,
         utilisateurs=utilisateurs,
-        materiels=materiels,
+        demandes_recues=demandes_recues,
+        demandes_envoyees=demandes_envoyees,
         nom=session["nom"],
         prenom=session["prenom"]
     )
+#--------------------
+#Profil
+@app.route("/profil")
+@app.route("/profil/<int:user_id>")
+def profil(user_id=None):
+    if "id_user" not in session:
+        return redirect("/")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # LOGIQUE : Si user_id est dans l'URL, on prend celui-là. 
+    # Sinon, on prend celui de la personne connectée (session).
+    target_id = user_id if user_id is not None else session["id_user"]
+
+    # 1. Infos de l'utilisateur cible (soit moi, soit un autre)
+    cursor.execute("SELECT * FROM utilisateurs WHERE id_utilisateur = %s", (target_id,))
+    user_info = cursor.fetchone()
+
+    # Si l'utilisateur n'existe pas en BDD
+    if not user_info:
+        cursor.close()
+        db.close()
+        return "Utilisateur introuvable", 404
+
+    # 2. Matériel possédé par cet utilisateur
+    cursor.execute("""
+        SELECT id_materiel, nom_modele, rfid_tag_epc, etat 
+        FROM materiel_stock 
+        WHERE id_utilisateur_actuel = %s
+    """, (target_id,))
+    materiels_possedes = cursor.fetchall()
+
+    # 3. Réservations de cet utilisateur
+    cursor.execute("""
+        SELECT r.id_reservation, m.nom_modele, r.date_reservation, r.statut, r.date_limite
+        FROM reservations r
+        JOIN materiel_stock m ON r.id_materiel = m.id_materiel
+        WHERE r.id_utilisateur = %s AND r.statut = 'confirmée'
+    """, (target_id,))
+    reservations = cursor.fetchall()
+
+    cursor.close()
+    db.close()
+
+    # On renvoie la même page profil.html, mais avec les données de target_id
+    return render_template("IHM/profil.html", 
+                           u=user_info, 
+                           possedes=materiels_possedes, 
+                           reservations=reservations,
+                           nom=session["nom"],      # Pour la top-bar
+                           prenom=session["prenom"]) # Pour la top-bar
 
 # -------------------------------
 # LOGOUT
@@ -566,3 +736,5 @@ def logout():
 # -------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+#app.run(host="0.0.0.0", port=5000, ssl_context=("cert.pem", "key.pem"))
+

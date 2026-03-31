@@ -7,25 +7,43 @@
 </head>
 
 <body class="corps-tableau-de-bord">
-
 <div class="barre-laterale">
     <h2>RFID</h2>
-
-    <a href="/dashboard" >Tableau de bord</a>
+    <a href="/dashboard">Tableau de bord</a>
     <a href="/materiels">Matériels</a>
-    <a href="/historique" class="actif">Historique</a>
+    <a href="/historique"class="actif">Historique</a>
     <a href="/utilisateurs">Utilisateurs</a>
-{% if session["admin"] == 1 %}
-    <a href="/admin" class="admin-btn"> Administration</a>
-{% endif %}
+    <a href="/pret">Prets</a>
+    <a href="/reservations">Réservations</a>
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
 <div class="contenu-tableau-de-bord">
 
-    <header class="entete-tableau-de-bord">
-        <h1>Historique des mouvements</h1>
-        <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1>Tableau de bord</h1>
+        </div>
+
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+
     </header>
 
 	<!--Barre de recherche-->
@@ -59,6 +77,24 @@
     </div>
 
 </div>
+
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    // On écoute le clic sur le bouton
+    userBtn.addEventListener('click', function(e) {
+        e.stopPropagation(); // Empêche la fermeture immédiate via l'événement window
+        userDropdown.classList.toggle('show');
+    });
+
+    // Ferme le menu si on clique n'importe où ailleurs sur la page
+    window.addEventListener('click', function() {
+        if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
 
 </body>
 </html>

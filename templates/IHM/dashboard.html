@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Tableau de bord</title>
+<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
 </head>
 <body class="corps-tableau-de-bord">
@@ -13,25 +14,36 @@
     <a href="/materiels">Matériels</a>
     <a href="/historique">Historique</a>
     <a href="/utilisateurs">Utilisateurs</a>
-
-    {% if session["admin"] == 1 %}
+    <a href="/pret">Prets</a>
+    <a href="/reservations">Réservations</a>
+{% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
     {% endif %}
-
-    <a href="/reservations">Réservations</a>
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
 <div class="contenu-tableau-de-bord">
 
-    <header class="entete-tableau-de-bord">
-        <h1>Tableau de bord</h1>
-        <span>Connecté : <strong>{{ prenom }} {{ nom }}</strong></span>
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1>Tableau de bord</h1>
+        </div>
+
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+            
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
     </header>
 
-    <!-- ================= STATISTIQUES ================= -->
     <div class="statistiques">
-
         <div class="carte bleu">
             <h3>Matériels disponibles</h3>
             <p>{{ nb_stock }}</p>
@@ -41,29 +53,30 @@
             <h3>Matériels sortis</h3>
             <p>{{ nb_sorti }}</p>
         </div>
-
     </div>
 
-    <!-- ================= MOUVEMENTS ================= -->
     <div class="conteneur-tableau">
         <h3>Derniers mouvements</h3>
 
         <table>
-            <tr>
-                <th>Matériel</th>
-                <th>Utilisateur</th>
-                <th>Mouvement</th>
-                <th>Date</th>
-            </tr>
-
-            {% for m in mouvements %}
-            <tr>
-                <td>{{ m.nom_modele }}</td>
-                <td>{{ m.prenom }} {{ m.nom }}</td>
-                <td>{{ m.type_mouvement }}</td>
-                <td>{{ m.date_heure }}</td>
-            </tr>
-            {% endfor %}
+            <thead>
+                <tr>
+                    <th>Matériel</th>
+                    <th>Utilisateur</th>
+                    <th>Mouvement</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in mouvements %}
+                <tr>
+                    <td>{{ m.nom_modele }}</td>
+                    <td>{{ m.prenom }} {{ m.nom }}</td>
+                    <td>{{ m.type_mouvement }}</td>
+                    <td>{{ m.date_heure }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
 
         {% if not mouvements %}
@@ -72,5 +85,24 @@
     </div>
 
 </div>
+
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    // Toggle au clic
+    userBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+    });
+
+    // Fermer si on clique ailleurs sur la page
+    window.addEventListener('click', () => {
+        if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
+
 </body>
 </html>
