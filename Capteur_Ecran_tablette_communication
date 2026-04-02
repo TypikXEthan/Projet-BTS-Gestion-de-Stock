@@ -1,0 +1,44 @@
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
+import requests
+import time
+
+# --- CONFIGURATION ---
+URL_VM = "http://10.96.222.141:5000/verifier_acces" 
+
+reader = SimpleMFRC522()
+
+print("--- LECTEUR RFID PRÊT ---")
+print("En attente d'un badge...")
+
+try:
+    while True:
+        # 1. Lecture physique du badge
+        id_badge, text = reader.read()
+        badge_uid = str(id_badge).strip()
+        
+        print(f"\n[SCAN] Badge détecté : {badge_uid}")
+
+        # 2. Envoi de la donnée à ton Flask
+        try:
+            payload = {"badge_uid": badge_uid}
+            response = requests.post(URL_VM, json=payload, timeout=5)
+            
+            if response.status_code == 200:
+                print(">> Réponse Serveur : ACCÈS OK")
+            elif response.status_code == 403:
+                print(">> Réponse Serveur : BADGE INCONNU")
+            else:
+                print(f">> Erreur Serveur : {response.status_code}")
+                
+        except Exception as e:
+            print(f"!! Erreur de connexion vers la VM : {e}")
+
+        # 3. Petite pause pour éviter de scanner 50 fois le même badge
+        time.sleep(3)
+        print("\nPrêt pour le prochain scan...")
+
+except KeyboardInterrupt:
+    print("\nArrêt du programme...")
+finally:
+    GPIO.cleanup()
