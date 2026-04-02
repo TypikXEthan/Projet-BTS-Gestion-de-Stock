@@ -1,0 +1,2 @@
+Admin ajout horaire hachage des infos genre badges,et mdp dans le panel admin 
+Truc a faire changement systeme de reservation 

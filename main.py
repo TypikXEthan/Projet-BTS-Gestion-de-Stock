@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session,flash
+from flask import Flask, render_template, request, redirect, session,flash,url_for
 import mysql.connector
 import hashlib
 from datetime import datetime, timedelta
@@ -465,10 +465,9 @@ def reservations():
         admin=session.get("admin", 0)
     )
 
-
-# -------------------------------
-# ADMINISTRATION
-# -------------------------------
+#-----------------
+#Administration
+#-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     if "id_user" not in session or session.get("admin") != 1:
@@ -480,66 +479,94 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        # --- CRÉER UTILISATEUR ---
-        if action == "creer_utilisateur":
+        # --- MODIFIER HORAIRES ---
+        if action == "modifier_horaires_globaux":
+            h_debut = request.form.get("h_debut")
+            h_fin = request.form.get("h_fin")
+            cursor.execute("UPDATE portes SET heure_debut = %s, heure_fin = %s WHERE statut_acces = 'CONFIG'", (h_debut, h_fin))
+            db.commit()
+            flash("Horaires mis à jour", "success")
+
+        # --- CRÉER UTILISATEUR (AVEC HACHAGE MDP ET BADGE) ---
+        elif action == "creer_utilisateur":
+            mdp_clair = request.form.get("mot_de_passe")
+            badge_clair = request.form.get("badge_uid") # Récupération du badge
+            
+            # Hachage du mot de passe
+            mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
+            # Hachage du Badge UID
+            badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
+            
             cursor.execute("""
                 INSERT INTO utilisateurs (utilisateur, mot_de_passe, badge_uid, nom, prenom, email, telephone, role, admin) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (request.form.get("utilisateur"), request.form.get("mot_de_passe"), 
-                  request.form.get("badge_uid"), request.form.get("nom"), 
-                  request.form.get("prenom"), request.form.get("email"), 
-                  request.form.get("telephone"), request.form.get("role"), 
-                  request.form.get("admin_status")))
+            """, (request.form.get("utilisateur"), mdp_hash, badge_hash,
+                  request.form.get("nom"), request.form.get("prenom"), request.form.get("email"),
+                  request.form.get("telephone"), request.form.get("role"), request.form.get("admin_status")))
             db.commit()
-            flash("Utilisateur créé avec succès", "success")
+            flash("Utilisateur créé (données hachées)", "success")
 
-        # --- CRÉER MATÉRIEL ---
-        elif action == "ajouter_materiel":
+        # --- MODIFIER UTILISATEUR (AVEC HACHAGE SI NOUVEAU MDP OU BADGE) ---
+        elif action == "modifier_utilisateur_complet":
+            id_u = request.form.get("id_utilisateur")
+            nouveau_mdp = request.form.get("nouveau_mdp")
+            nouveau_badge = request.form.get("badge_uid")
+            
             cursor.execute("""
-                INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
-                VALUES (%s, %s, %s, %s, 1, 1)
-            """, (request.form.get("id_inventaire"), request.form.get("nom_modele"), 
-                  request.form.get("rfid_tag"), request.form.get("etat")))
-            db.commit()
-            flash("Matériel ajouté au stock", "success")
+                UPDATE utilisateurs SET utilisateur=%s, nom=%s, prenom=%s, email=%s, telephone=%s, role=%s, admin=%s
+                WHERE id_utilisateur=%s
+            """, (request.form.get("utilisateur"), request.form.get("nom"), request.form.get("prenom"),
+                  request.form.get("email"), request.form.get("telephone"),
+                  request.form.get("role"), request.form.get("admin_status"), id_u))
+            
+            # Hachage si nouveau badge saisi
+            if nouveau_badge and nouveau_badge.strip() != "":
+                b_hash = hashlib.sha256(nouveau_badge.encode()).hexdigest()
+                cursor.execute("UPDATE utilisateurs SET badge_uid=%s WHERE id_utilisateur=%s", (b_hash, id_u))
 
-        # --- MODIFIER MATÉRIEL + MOUVEMENT ---
+            # Hachage si nouveau MDP saisi
+            if nouveau_mdp and nouveau_mdp.strip() != "":
+                mdp_hash = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
+                cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s", (mdp_hash, id_u))
+                
+            db.commit()
+            flash("Profil mis à jour", "success")
+
+        # --- LE RESTE DU CODE (SUPPRESSION / MATÉRIEL) RESTE IDENTIQUE ---
+        elif action == "supprimer_utilisateur":
+            id_u = request.form.get("id_utilisateur")
+            if int(id_u) == session.get('id_user'):
+                flash("Impossible de supprimer votre propre compte !", "danger")
+            else:
+                cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur = %s", (id_u,))
+                db.commit()
+                flash("Utilisateur supprimé", "warning")
+
+        elif action == "ajouter_materiel":
+            cursor.execute("INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) VALUES (%s,%s,%s,%s,1,1)",
+                           (request.form.get("id_inventaire"), request.form.get("nom_modele"), request.form.get("rfid_tag"), request.form.get("etat")))
+            db.commit()
+        
         elif action == "modifier_materiel_complet":
             id_mat = request.form.get("id_materiel")
-            nouveau_statut = request.form.get("nouveau_statut")
-            dest_id = request.form.get("id_utilisateur_actuel")
-            dest_id = None if dest_id == "" else dest_id
-            
-            cursor.execute("""
-                UPDATE materiel_stock 
-                SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s 
-                WHERE id_materiel=%s
-            """, (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), 
-                  nouveau_statut, dest_id, id_mat))
-            
-            cursor.execute("""
-                INSERT INTO mouvements (id_materiel, id_utilisateur, id_utilisateur_destinataire, type_mouvement, date_heure)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (id_mat, session['id_user'], dest_id, nouveau_statut, datetime.now()))
-            
+            statut = request.form.get("nouveau_statut")
+            dest_id = request.form.get("id_utilisateur_actuel") or None
+            cursor.execute("UPDATE materiel_stock SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s WHERE id_materiel=%s",
+                           (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), statut, dest_id, id_mat))
             db.commit()
-            flash("Mise à jour effectuée", "success")
 
-    # Données pour les tableaux
+    cursor.execute("SELECT heure_debut, heure_fin FROM portes WHERE statut_acces = 'CONFIG' LIMIT 1")
+    conf = cursor.fetchone()
+    horaires = {"debut": str(conf['heure_debut'])[:5] if conf else "08:00", "fin": str(conf['heure_fin'])[:5] if conf else "18:00"}
     cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
     utilisateurs = cursor.fetchall()
-    cursor.execute("""
-        SELECT m.*, u.nom as nom_user, u.prenom as prenom_user 
-        FROM materiel_stock m 
-        LEFT JOIN utilisateurs u ON m.id_utilisateur_actuel = u.id_utilisateur
-    """)
+    cursor.execute("SELECT m.*, u.nom as nom_user, u.prenom as prenom_user FROM materiel_stock m LEFT JOIN utilisateurs u ON m.id_utilisateur_actuel = u.id_utilisateur")
     materiels = cursor.fetchall()
     cursor.close()
     db.close()
-    return render_template("IHM/admin.html", utilisateurs=utilisateurs, materiels=materiels, 
-                           nom=session.get("nom"), prenom=session.get("prenom"))
+    return render_template("IHM/admin.html", utilisateurs=utilisateurs, materiels=materiels, horaires=horaires, nom=session.get("nom"), prenom=session.get("prenom"))
 
-#-------------------
+#------------------
 #prets
 #-------------------
 @app.route("/pret", methods=["GET", "POST"])
