@@ -896,3 +896,24 @@ tr:hover td {
     color: var(--rouge);
     font-weight: 500;
 }
+
+
+
+/* Style spécifique pour la table des logs */
+.badge-stock {
+    background-color: var(--vert);
+    color: white;
+}
+
+.badge-out {
+    background-color: var(--rouge);
+    color: white;
+}
+
+code {
+    background-color: var(--gris-tres-clair);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: monospace;
+    color: var(--bleu-fonce);
+}

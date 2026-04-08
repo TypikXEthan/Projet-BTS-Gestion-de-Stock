@@ -470,7 +470,9 @@ def reservations():
 #-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
+    # Sécurité : Vérifier si l'utilisateur est connecté et admin
     if "id_user" not in session or session.get("admin") != 1:
+        flash("Accès réservé aux administrateurs.", "danger")
         return redirect("/")
 
     db = get_db()
@@ -479,39 +481,48 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        # --- MODIFIER HORAIRES ---
+        # --- 1. MODIFIER LES HORAIRES D'ACCÈS ---
         if action == "modifier_horaires_globaux":
             h_debut = request.form.get("h_debut")
             h_fin = request.form.get("h_fin")
-            cursor.execute("UPDATE portes SET heure_debut = %s, heure_fin = %s WHERE statut_acces = 'CONFIG'", (h_debut, h_fin))
+            # On met à jour la configuration dans la table portes
+            cursor.execute("UPDATE portes SET heure_debut = %s, heure_fin = %s", (h_debut, h_fin))
             db.commit()
-            flash("Horaires mis à jour", "success")
+            flash("Horaires de passage mis à jour avec succès.", "success")
 
-        # --- CRÉER UTILISATEUR (AVEC HACHAGE MDP ET BADGE) ---
+        # --- 2. CRÉER UN NOUVEL UTILISATEUR ---
         elif action == "creer_utilisateur":
+            nom = request.form.get("nom")
+            prenom = request.form.get("prenom")
+            login_user = request.form.get("utilisateur")
             mdp_clair = request.form.get("mot_de_passe")
-            badge_clair = request.form.get("badge_uid") # Récupération du badge
-            
-            # Hachage du mot de passe
-            mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
-            # Hachage du Badge UID
-            badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
-            
-            cursor.execute("""
-                INSERT INTO utilisateurs (utilisateur, mot_de_passe, badge_uid, nom, prenom, email, telephone, role, admin) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (request.form.get("utilisateur"), mdp_hash, badge_hash,
-                  request.form.get("nom"), request.form.get("prenom"), request.form.get("email"),
-                  request.form.get("telephone"), request.form.get("role"), request.form.get("admin_status")))
-            db.commit()
-            flash("Utilisateur créé (données hachées)", "success")
+            badge_clair = request.form.get("badge_uid")
+            email = request.form.get("email")
+            tel = request.form.get("telephone")
+            role = request.form.get("role")
+            admin_status = request.form.get("admin_status")
 
-        # --- MODIFIER UTILISATEUR (AVEC HACHAGE SI NOUVEAU MDP OU BADGE) ---
+            # Sécurité : Hachage du mot de passe et du badge
+            mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
+            badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
+
+            try:
+                cursor.execute("""
+                    INSERT INTO utilisateurs (utilisateur, mot_de_passe, badge_uid, nom, prenom, email, telephone, role, admin) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (login_user, mdp_hash, badge_hash, nom, prenom, email, tel, role, admin_status))
+                db.commit()
+                flash(f"L'utilisateur {prenom} {nom} a été créé.", "success")
+            except mysql.connector.Error as err:
+                flash(f"Erreur lors de la création : {err}", "danger")
+
+        # --- 3. MODIFIER UN UTILISATEUR EXISTANT ---
         elif action == "modifier_utilisateur_complet":
             id_u = request.form.get("id_utilisateur")
             nouveau_mdp = request.form.get("nouveau_mdp")
             nouveau_badge = request.form.get("badge_uid")
-            
+
+            # Mise à jour des infos de base
             cursor.execute("""
                 UPDATE utilisateurs SET utilisateur=%s, nom=%s, prenom=%s, email=%s, telephone=%s, role=%s, admin=%s
                 WHERE id_utilisateur=%s
@@ -526,46 +537,80 @@ def admin():
 
             # Hachage si nouveau MDP saisi
             if nouveau_mdp and nouveau_mdp.strip() != "":
-                mdp_hash = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
-                cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s", (mdp_hash, id_u))
+                m_hash = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
+                cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s", (m_hash, id_u))
                 
             db.commit()
-            flash("Profil mis à jour", "success")
+            flash("Profil utilisateur mis à jour.", "info")
 
-        # --- LE RESTE DU CODE (SUPPRESSION / MATÉRIEL) RESTE IDENTIQUE ---
+        # --- 4. SUPPRIMER UN UTILISATEUR ---
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
-                flash("Impossible de supprimer votre propre compte !", "danger")
+                flash("Vous ne pouvez pas supprimer votre propre compte admin !", "danger")
             else:
                 cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur = %s", (id_u,))
                 db.commit()
-                flash("Utilisateur supprimé", "warning")
+                flash("Utilisateur supprimé définitivement.", "warning")
 
+        # --- 5. AJOUTER DU MATÉRIEL ---
         elif action == "ajouter_materiel":
-            cursor.execute("INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) VALUES (%s,%s,%s,%s,1,1)",
-                           (request.form.get("id_inventaire"), request.form.get("nom_modele"), request.form.get("rfid_tag"), request.form.get("etat")))
+            id_inv = request.form.get("id_inventaire")
+            nom_m = request.form.get("nom_modele")
+            tag_r = request.form.get("rfid_tag")
+            etat_m = request.form.get("etat")
+            
+            cursor.execute("""
+                INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
+                VALUES (%s, %s, %s, %s, 1, 1)
+            """, (id_inv, nom_m, tag_r, etat_m))
             db.commit()
-        
-        elif action == "modifier_materiel_complet":
-            id_mat = request.form.get("id_materiel")
-            statut = request.form.get("nouveau_statut")
-            dest_id = request.form.get("id_utilisateur_actuel") or None
-            cursor.execute("UPDATE materiel_stock SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s WHERE id_materiel=%s",
-                           (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), statut, dest_id, id_mat))
-            db.commit()
+            flash("Nouveau matériel ajouté au stock.", "success")
 
-    cursor.execute("SELECT heure_debut, heure_fin FROM portes WHERE statut_acces = 'CONFIG' LIMIT 1")
-    conf = cursor.fetchone()
-    horaires = {"debut": str(conf['heure_debut'])[:5] if conf else "08:00", "fin": str(conf['heure_fin'])[:5] if conf else "18:00"}
+        # --- 6. MODIFIER MATÉRIEL (Statut, Attribution) ---
+        elif action == "modifier_materiel_complet":
+            id_m = request.form.get("id_materiel")
+            u_actuel = request.form.get("id_utilisateur_actuel")
+            # Si u_actuel est vide, on met NULL en BDD
+            u_actuel = u_actuel if u_actuel != "" else None
+            
+            cursor.execute("""
+                UPDATE materiel_stock 
+                SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s 
+                WHERE id_materiel=%s
+            """, (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), 
+                  request.form.get("nouveau_statut"), u_actuel, id_m))
+            db.commit()
+            flash("Fiche matériel mise à jour.", "info")
+
+        return redirect(url_for('admin'))
+
+    # --- PRÉPARATION DES DONNÉES POUR LE TEMPLATE (GET) ---
+    
+    # Horaires
+    cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
+    horaires = cursor.fetchone()
+    if not horaires: horaires = {'debut': '08:00', 'fin': '18:00'}
+
+    # Liste utilisateurs
     cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
-    utilisateurs = cursor.fetchall()
-    cursor.execute("SELECT m.*, u.nom as nom_user, u.prenom as prenom_user FROM materiel_stock m LEFT JOIN utilisateurs u ON m.id_utilisateur_actuel = u.id_utilisateur")
-    materiels = cursor.fetchall()
+    utilisateurs_list = cursor.fetchall()
+
+    # Liste matériels
+    cursor.execute("SELECT * FROM materiel_stock ORDER BY id_materiel ASC")
+    materiels_list = cursor.fetchall()
+
     cursor.close()
     db.close()
-    return render_template("IHM/admin.html", utilisateurs=utilisateurs, materiels=materiels, horaires=horaires, nom=session.get("nom"), prenom=session.get("prenom"))
 
+    return render_template(
+        "IHM/admin.html",
+        horaires=horaires,
+        utilisateurs=utilisateurs_list,
+        materiels=materiels_list,
+        prenom=session.get("prenom"),
+        nom=session.get("nom")
+    )
 #------------------
 #prets
 #-------------------
@@ -749,6 +794,56 @@ def profil(user_id=None):
                            reservations=reservations,
                            nom=session["nom"],      # Pour la top-bar
                            prenom=session["prenom"]) # Pour la top-bar
+
+#--------------
+#HISTORIQUE ACCEES
+#----------------
+@app.route('/historique_acces')
+def historique_access_page():
+    if 'id_user' not in session:
+        return redirect(url_for('login'))
+
+    # 1. Récupération de la recherche
+    recherche = request.args.get('recherche', '').strip()
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # 2. Construction de la requête SQL avec filtres
+    # On utilise des LEFT JOIN pour ne pas perdre les "Inconnus" (id_utilisateur IS NULL)
+    sql = """
+        SELECT h.*, u.nom, u.prenom 
+        FROM historique_acces h
+        LEFT JOIN utilisateurs u ON h.id_utilisateur = u.id_utilisateur
+    """
+
+    params = []
+    if recherche:
+        sql += """ 
+            WHERE u.nom LIKE %s 
+            OR u.prenom LIKE %s 
+            OR h.id_porte_physique LIKE %s 
+            OR h.statut_acces LIKE %s
+        """
+        search_val = f"%{recherche}%"
+        params = [search_val, search_val, search_val, search_val]
+
+    # 3. Tri par les plus récents
+    sql += " ORDER BY h.date_acces DESC, h.heure_acces DESC LIMIT 100"
+    
+    cursor.execute(sql, params)
+    logs = cursor.fetchall()
+    
+    cursor.close()
+    db.close()
+
+    return render_template(
+        'IHM/historique_acces.html', 
+        logs=logs, 
+        nom=session.get("nom"), 
+        prenom=session.get("prenom"),
+        recherche=recherche  # On renvoie la recherche pour qu'elle reste dans l'input
+    )
 
 # -------------------------------
 # LOGOUT

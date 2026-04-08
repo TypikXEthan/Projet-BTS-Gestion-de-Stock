@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Historique des Accès Portes</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériel</a>
+    <a href="/historique_acces" class="actif">Journal des Accès</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/pret">Prêts</a>
+    <a href="/reservations">Réservations</a>
+    
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1>Journal des Accès Physiques</h1>
+        </div>
+
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+    <form method="get" style="margin-bottom: 20px;">
+        <input type="text" name="recherche" placeholder="Rechercher une porte, un statut..." value="{{ recherche if recherche else '' }}" style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ccc;">
+        <button type="submit" style="padding: 10px 20px; border-radius: 8px; border: none; background-color: #34495e; color: white; cursor: pointer;">Rechercher</button>
+    </form>
+
+    <div class="conteneur-tableau">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Heure</th>
+                    <th>Utilisateur</th>
+                    <th>Porte / Lecteur</th>
+                    <th>Statut de l'Accès</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.date_acces }}</td>
+                    <td>{{ log.heure_acces }}</td>
+                    <td>
+                        {% if log.id_utilisateur %}
+                            <strong>{{ log.prenom }} {{ log.nom }}</strong>
+                        {% else %}
+                         <span style=" font-weight: bold;"> INCONNU</span>
+                        {% endif %}
+                    </td>
+                    <td><code>{{ log.id_porte_physique }}</code></td>
+                    <td>
+                        {% if log.statut_acces == 'ACCÈS_AUTORISÉ' %}
+                            <span style="background-color: #2ecc71; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.9em;">Autorisé</span>
+                        {% else %}
+                            <span style="background-color: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.9em;">{{ log.statut_acces }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if not logs %}
+        <p style="margin-top: 20px;">Aucun log d'accès enregistré.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    userBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+    });
+
+    window.addEventListener('click', function() {
+        if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
+
+</body>
+</html>
