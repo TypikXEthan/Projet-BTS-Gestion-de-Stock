@@ -329,7 +329,7 @@ def reservations():
 #-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
-    # Verifie que l'utilsateur est bien admin=1 dans labdd 
+    # Vérifie que l'utilisateur est bien admin=1 dans la bdd 
     if "id_user" not in session or session.get("admin") != 1:
         flash("Accès réservé aux administrateurs.", "danger")
         return redirect("/")
@@ -340,15 +340,25 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        #Horraire access modifier
-        if action == "modifier_horaires_globaux":
+        # --- ACTION : SUPPRIMER RÉSERVATION ---
+        if action == "supprimer_reservation":
+            id_res = request.form.get("id_reservation")
+            try:
+                cursor.execute("DELETE FROM reservations WHERE id_reservation = %s", (id_res,))
+                db.commit()
+                flash("Réservation annulée avec succès.", "warning")
+            except mysql.connector.Error as err:
+                flash(f"Erreur lors de l'annulation : {err}", "danger")
+
+        # --- ACTION : HORAIRES ---
+        elif action == "modifier_horaires_globaux":
             h_debut = request.form.get("h_debut")
             h_fin = request.form.get("h_fin")
             cursor.execute("UPDATE portes SET heure_debut = %s, heure_fin = %s", (h_debut, h_fin))
             db.commit()
             flash("Horaires de passage mis à jour avec succès.", "success")
 
-        # Creer utilisateur
+        # --- ACTION : CRÉER UTILISATEUR ---
         elif action == "creer_utilisateur":
             nom = request.form.get("nom")
             prenom = request.form.get("prenom")
@@ -360,7 +370,6 @@ def admin():
             role = request.form.get("role")
             admin_status = request.form.get("admin_status")
 
-            # Hachage du mot de passe et du badge
             mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
             badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
 
@@ -374,7 +383,7 @@ def admin():
             except mysql.connector.Error as err:
                 flash(f"Erreur lors de la création : {err}", "danger")
 
-        #Modifier un utilisateur
+        # --- ACTION : MODIFIER UTILISATEUR ---
         elif action == "modifier_utilisateur_complet":
             id_u = request.form.get("id_utilisateur")
             nouveau_mdp = request.form.get("nouveau_mdp")
@@ -387,12 +396,10 @@ def admin():
                   request.form.get("email"), request.form.get("telephone"),
                   request.form.get("role"), request.form.get("admin_status"), id_u))
             
-            # Hachage si nouveau badge saisi
             if nouveau_badge and nouveau_badge.strip() != "":
                 b_hash = hashlib.sha256(nouveau_badge.encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET badge_uid=%s WHERE id_utilisateur=%s", (b_hash, id_u))
 
-            # Hachage si nouveau MDP saisi
             if nouveau_mdp and nouveau_mdp.strip() != "":
                 m_hash = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s", (m_hash, id_u))
@@ -400,7 +407,7 @@ def admin():
             db.commit()
             flash("Profil utilisateur mis à jour.", "info")
 
-        # SUPPRIMER UN UTILISATEUR 
+        # --- ACTION : SUPPRIMER UTILISATEUR ---
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
@@ -410,25 +417,20 @@ def admin():
                 db.commit()
                 flash("Utilisateur supprimé définitivement.", "warning")
 
-        # AJOUT MATÉRIEL
+        # --- ACTION : AJOUTER MATÉRIEL ---
         elif action == "ajouter_materiel":
-            id_inv = request.form.get("id_inventaire")
-            nom_m = request.form.get("nom_modele")
-            tag_r = request.form.get("rfid_tag")
-            etat_m = request.form.get("etat")
-            
             cursor.execute("""
                 INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
                 VALUES (%s, %s, %s, %s, 1, 1)
-            """, (id_inv, nom_m, tag_r, etat_m))
+            """, (request.form.get("id_inventaire"), request.form.get("nom_modele"), 
+                  request.form.get("rfid_tag"), request.form.get("etat")))
             db.commit()
             flash("Nouveau matériel ajouté au stock.", "success")
 
-        #MODIF MATÉRIEL
+        # --- ACTION : MODIFIER MATÉRIEL ---
         elif action == "modifier_materiel_complet":
             id_m = request.form.get("id_materiel")
             u_actuel = request.form.get("id_utilisateur_actuel")
-            # Si u_actuel est vide, on met NULL en BDD
             u_actuel = u_actuel if u_actuel != "" else None
             
             cursor.execute("""
@@ -442,18 +444,30 @@ def admin():
 
         return redirect(url_for('admin'))
     
-    # Horaires
+    # --- RÉCUPÉRATION DES DONNÉES ---
+    # 1. Horaires
     cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
     horaires = cursor.fetchone()
     if not horaires: horaires = {'debut': '08:00', 'fin': '18:00'}
 
-    # Liste utilisateurs
+    # 2. Utilisateurs
     cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
     utilisateurs_list = cursor.fetchall()
 
-    # Liste matériels
+    # 3. Matériels
     cursor.execute("SELECT * FROM materiel_stock ORDER BY id_materiel ASC")
     materiels_list = cursor.fetchall()
+
+    # 4. Réservations (avec jointures pour les noms)
+    cursor.execute("""
+        SELECT r.id_reservation, r.date_reservation, r.date_rendu_prevue, r.statut,
+               u.nom, u.prenom, m.nom_modele
+        FROM reservations r
+        JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
+        JOIN materiel_stock m ON r.id_materiel = m.id_materiel
+        ORDER BY r.date_reservation DESC
+    """)
+    reservations_list = cursor.fetchall()
 
     cursor.close()
     db.close()
@@ -463,9 +477,13 @@ def admin():
         horaires=horaires,
         utilisateurs=utilisateurs_list,
         materiels=materiels_list,
+        reservations=reservations_list,
         prenom=session.get("prenom"),
         nom=session.get("nom")
     )
+
+
+
 #------------------
 #prets
 #-------------------
