@@ -591,36 +591,49 @@ def pret():
 #--------------------
 #Profil
 #--------------------
-@app.route("/profil")
-@app.route("/profil/<int:user_id>")
+@app.route("/profil", methods=["GET", "POST"])
+@app.route("/profil/<int:user_id>", methods=["GET", "POST"])
 def profil(user_id=None):
     if "id_user" not in session:
         return redirect("/")
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
     target_id = user_id if user_id is not None else session["id_user"]
 
-    # 1. Infos de l'utilisateur cible (soit moi, soit un autre)
+    # --- PARTIE MODIFICATION (POST) ---
+    if request.method == "POST":
+        email = request.form.get("email")
+        tel = request.form.get("telephone")
+        nouveau_mdp = request.form.get("nouveau_mdp")
+
+        # Mise à jour des infos de base
+        cursor.execute("""
+            UPDATE utilisateurs 
+            SET email = %s, telephone = %s 
+            WHERE id_utilisateur = %s
+        """, (email, tel, target_id))
+
+        # Mise à jour du mot de passe si rempli
+        if nouveau_mdp and nouveau_mdp.strip() != "":
+            import hashlib
+            h_mdp = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
+            cursor.execute("UPDATE utilisateurs SET mot_de_passe = %s WHERE id_utilisateur = %s", (h_mdp, target_id))
+        
+        db.commit()
+        flash("Profil mis à jour avec succès !", "success")
+        return redirect(url_for('profil', user_id=user_id))
+
+    # --- PARTIE AFFICHAGE (GET) ---
     cursor.execute("SELECT * FROM utilisateurs WHERE id_utilisateur = %s", (target_id,))
     user_info = cursor.fetchone()
 
-    # Si l'utilisateur n'existe pas en BDD
     if not user_info:
-        cursor.close()
-        db.close()
         return "Utilisateur introuvable", 404
 
-    # 2. Matériel possédé par cet utilisateur
-    cursor.execute("""
-        SELECT id_materiel, nom_modele, rfid_tag_epc, etat 
-        FROM materiel_stock 
-        WHERE id_utilisateur_actuel = %s
-    """, (target_id,))
+    cursor.execute("SELECT id_materiel, nom_modele, rfid_tag_epc, etat FROM materiel_stock WHERE id_utilisateur_actuel = %s", (target_id,))
     materiels_possedes = cursor.fetchall()
 
-    # 3. Réservations de cet utilisateur
     cursor.execute("""
         SELECT r.id_reservation, m.nom_modele, r.date_reservation, r.statut, r.date_limite
         FROM reservations r
@@ -632,13 +645,9 @@ def profil(user_id=None):
     cursor.close()
     db.close()
 
-    # On renvoie la même page profil.html, mais avec les données de target_id
-    return render_template("IHM/profil.html", 
-                           u=user_info, 
-                           possedes=materiels_possedes, 
-                           reservations=reservations,
-                           nom=session["nom"],      # Pour la top-bar
-                           prenom=session["prenom"]) # Pour la top-bar
+    return render_template("IHM/profil.html", u=user_info, possedes=materiels_possedes, reservations=reservations, nom=session["nom"], prenom=session["prenom"])
+
+
 
 #--------------
 #HISTORIQUE ACCEES
@@ -857,68 +866,54 @@ def valider_session_finale():
     data = request.json
     user_login = data.get('user')
     password = data.get('password')
-    
+    tags_selectionnes = data.get('tags', [])
+
+    # --- MODIFICATION ICI : Autoriser la fermeture si rien n'est scanné ---
+    if not tags_selectionnes:
+        session_scan = {} # On vide la session temporaire
+        return jsonify({"status": "ok", "message": "Session fermée sans mouvement"})
+    # ---------------------------------------------------------------------
+
+    # Si il y a des tags, on vérifie l'identité normalement
     mdp_hash = hashlib.sha256(password.encode()).hexdigest()
     
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
-        # 1. Vérifier l'identité de l'utilisateur qui valide
-        cursor.execute("SELECT id_utilisateur, nom, prenom FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
+        # 1. Vérification de l'utilisateur qui valide
+        cursor.execute("SELECT id_utilisateur FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
         valideur = cursor.fetchone()
         
         if not valideur:
             return jsonify({"status": "error", "message": "Identifiants incorrects"}), 403
 
-        id_valideur = valideur['id_utilisateur']
+        id_u = valideur['id_utilisateur']
 
-        # 2. Vérifier les conflits de réservation avant d'écrire quoi que ce soit
-        for tag, infos in session_scan.items():
-            # On cherche une réservation 'Confirmée' pour ce matériel aujourd'hui
-            cursor.execute("""
-                SELECT id_reservation, id_utilisateur 
-                FROM reservations 
-                WHERE id_materiel = %s AND statut = 'Confirmée'
-                AND CURDATE() BETWEEN date_reservation AND date_limite
-            """, (infos['id'],))
-            res_active = cursor.fetchone()
+        # 2. Traitement de chaque matériel choisi
+        for tag in tags_selectionnes:
+            if tag in session_scan:
+                infos = session_scan[tag]
+                nouvel_utilisateur = None if infos['etat'] == "Disponible" else id_u
 
-            if res_active:
-                # Si le matériel est réservé par quelqu'un d'AUTRE
-                if res_active['id_utilisateur'] != id_valideur:
-                    cursor.execute("SELECT nom, prenom FROM utilisateurs WHERE id_utilisateur = %s", (res_active['id_utilisateur'],))
-                    proprio = cursor.fetchone()
-                    msg = f"Conflit : Le matériel '{infos['nom']}' est réservé par {proprio['prenom']} {proprio['nom']}."
-                    return jsonify({"status": "error", "message": msg}), 400
-                
-                # Si c'est sa propre réservation, on la marquera comme 'Récupérée' plus bas
-                infos['id_res_a_maj'] = res_active['id_reservation']
+                query = """
+                    UPDATE materiel_stock 
+                    SET etat = %s, id_utilisateur_actuel = %s 
+                    WHERE rfid_tag_epc = %s
+                """
+                cursor.execute(query, (infos['etat'], nouvel_utilisateur, tag))
 
-        # 3. Si on arrive ici, aucun conflit n'a été trouvé : on valide tout
-        for tag, infos in session_scan.items():
-            # Mise à jour du stock
-            cursor.execute("UPDATE materiel_stock SET etat = %s, id_utilisateur_actuel = %s WHERE rfid_tag_epc = %s", 
-                           (infos['etat'], id_valideur, tag))
-            
-            # Si c'était une réservation perso, on met à jour le statut de la résa
-            if 'id_res_a_maj' in infos:
-                cursor.execute("UPDATE reservations SET statut = 'Récupérée' WHERE id_reservation = %s", (infos['id_res_a_maj'],))
-            
-            # Insertion dans l'historique des mouvements
-            type_mouv = "Entrée" if infos['etat'] == "Disponible" else "Sortie"
-            cursor.execute("""
-                INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                VALUES (%s, %s, %s, NOW())
-            """, (infos['id'], id_valideur, type_mouv))
-        
+                cursor.execute("""
+                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
+                    VALUES (%s, %s, %s, NOW())
+                """, (infos['id'], id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
+
         db.commit()
-        session_scan = {} # Reset de la session
+        session_scan = {} # Reset la session de scan
         return jsonify({"status": "ok"})
 
     except Exception as e:
-        db.rollback() # Annule tout en cas d'erreur
-        print(f"Erreur validation: {e}")
-        return jsonify({"status": "error", "message": "Erreur SQL interne"}), 500
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         cursor.close()
         db.close()

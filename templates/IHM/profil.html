@@ -3,12 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <title>Mon Profil - RFID</title>
-<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
-
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        /* Styles spécifiques pour la modale profil */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 9999; 
+            left: 0; top: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.7); 
+            align-items: center; 
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            width: 90%; 
+            max-width: 450px;
+        }
+        .input-modal {
+            width: 100%; 
+            padding: 10px; 
+            margin: 10px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+    </style>
 </head>
 <body class="corps-tableau-de-bord">
-
 
 <div class="barre-laterale">
     <h2>RFID</h2>
@@ -29,19 +55,16 @@
 <div class="contenu-tableau-de-bord">
     <header class="top-bar">
         <h1>Mon Profil</h1>
-        <div class="menu-utilisateur" id="userBtn">
+        <div class="menu-utilisateur" id="userBtn" style="cursor:pointer">
             <div class="user-info">
-                <span>{{ u.prenom }} {{ u.nom }}</span>
-                <span class="fleche">▼</span>
+                <strong>{{ prenom }} {{ nom }}</strong> ▼
             </div>
             <div class="dropdown-menu" id="userDropdown">
-                <a href="/logout" class="text-rouge">Déconnexion</a>
+                <a href="/logout" style="color:red; text-decoration:none; padding:10px; display:block;">Déconnexion</a>
             </div>
-        </div>
-    </header>
+        </header>
 
     <div class="profil-container">
-        
         <div class="admin-card carte-identite">
             <div class="avatar-profil">
                 {{ u.prenom[0] }}{{ u.nom[0] }}
@@ -49,26 +72,27 @@
             <h2>{{ u.prenom }} {{ u.nom }}</h2>
             <span class="badge-user">{{ u.role }}</span>
             
-            <div style="margin-top: 20px;">
+            <div style="margin-top: 20px; text-align: left;">
                 <p class="info-ligne"><strong>Identifiant :</strong> {{ u.utilisateur }}</p>
+                <p class="info-ligne"><strong>Email :</strong> {{ u.email or 'Non renseigné' }}</p>
+                <p class="info-ligne"><strong>Téléphone :</strong> {{ u.telephone or 'Non renseigné' }}</p>
                 <p class="info-ligne"><strong>Accès :</strong> 
                     {% if u.admin == 1 %}Administrateur{% else %}Utilisateur Standard{% endif %}
                 </p>
             </div>
+
+            <button class="btn btn-warning" onclick="ouvrirProfil()" style="width:100%; margin-top:15px;">
+                Modifier mon profil
+            </button>
         </div>
 
         <div class="profil-details">
-            
             <div class="admin-card">
-                <h2 class="titre-section-vert"> Matériel en ma possession</h2>
+                <h2 class="titre-section-vert">📦 Matériel en ma possession</h2>
                 {% if possedes %}
                 <table>
                     <thead>
-                        <tr>
-                            <th>Identifiant</th>
-                            <th>Modèle</th>
-                            <th>Tag RFID</th>
-                        </tr>
+                        <tr><th>ID</th><th>Modèle</th><th>Tag RFID</th></tr>
                     </thead>
                     <tbody>
                         {% for m in possedes %}
@@ -81,20 +105,16 @@
                     </tbody>
                 </table>
                 {% else %}
-                <p>Aucun matériel n'est actuellement associé à votre compte.</p>
+                <p>Aucun matériel associé.</p>
                 {% endif %}
             </div>
 
             <div class="admin-card">
-                <h2 class="titre-section-bleu"> Mes Réservations</h2>
+                <h2 class="titre-section-bleu">📅 Mes Réservations</h2>
                 {% if reservations %}
                 <table>
                     <thead>
-                        <tr>
-                            <th>Modèle</th>
-                            <th>Date Réservation</th>
-                            <th>Date Limite de récuperation</th>
-                        </tr>
+                        <tr><th>Modèle</th><th>Date</th><th>Limite récupération</th></tr>
                     </thead>
                     <tbody>
                         {% for r in reservations %}
@@ -107,27 +127,49 @@
                     </tbody>
                 </table>
                 {% else %}
-                <p>Vous n'avez aucune réservation active.</p>
+                <p>Aucune réservation active.</p>
                 {% endif %}
             </div>
-
         </div>
     </div>
 </div>
 
+<div id="modalEdit" class="modal">
+    <div class="modal-content">
+        <h3>Modifier mes coordonnées</h3>
+        <hr>
+        <form method="POST">
+            <label>Email</label>
+            <input type="email" name="email" value="{{ u.email or '' }}" class="input-modal" required>
+            
+            <label>Téléphone</label>
+            <input type="text" name="telephone" value="{{ u.telephone or '' }}" class="input-modal">
+            
+            <label>Changer le mot de passe (optionnel)</label>
+            <input type="password" name="nouveau_mdp" class="input-modal" placeholder="Laisser vide pour ne pas changer">
+            
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button type="submit" class="btn btn-success" style="flex:1">Sauvegarder</button>
+                <button type="button" class="btn" onclick="fermerProfil()" style="flex:1; background:#ccc">Annuler</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
-    // Gestion du menu déroulant utilisateur
+    // Menu Dropdown
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
+    userBtn.onclick = (e) => { e.stopPropagation(); userDropdown.classList.toggle('show'); };
 
-    userBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        userDropdown.classList.toggle('show');
-    });
+    // Gestion Modale
+    function ouvrirProfil() { document.getElementById('modalEdit').classList.add('active'); }
+    function fermerProfil() { document.getElementById('modalEdit').classList.remove('active'); }
 
-    window.addEventListener('click', function() {
+    window.onclick = (event) => {
         userDropdown.classList.remove('show');
-    });
+        if (event.target.className === 'modal active') fermerProfil();
+    };
 </script>
 
 </body>
