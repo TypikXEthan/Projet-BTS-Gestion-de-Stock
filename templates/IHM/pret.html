@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <title>Prêt de matériel</title>
+<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
 </head>
 
@@ -14,10 +16,13 @@
 
     <a href="/dashboard">Tableau de bord</a>
     <a href="/materiels">Matériels</a>
-    <a href="/historique">Historique</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
     <a href="/utilisateurs">Utilisateurs</a>
-    <a href="/pret" class="actif">Prets</a>
+    <a href="/pret" class="actif">Prêts</a>
     <a href="/reservations">Réservations</a>
+     <a href="/profil">Mon Profil</a>
+
 {% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
     {% endif %}

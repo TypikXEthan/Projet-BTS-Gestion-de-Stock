@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Scanner Badge</title>
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ecran.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body id="main-bg">
+
+    <div class="glass-card">
+        <div id="status-icon" class="text-9xl mb-6 animate-pulse">🛜</div>
+        <h1 id="title" class="text-white text-6xl font-black mb-4">SCANNEZ VOTRE BADGE ICI</h1>
+        <p id="subtitle" class="text-2xl text-blue-200">En attente du badge...</p>
+
+        <div id="countdown-zone" class="hidden mt-8 text-white text-xl font-bold bg-white/20 py-2 px-6 rounded-full">
+            Redirection dans <span id="timer">5</span>s...
+        </div>
+
+        <div id="loader" class="mt-10 flex justify-center space-x-3">
+            <div class="dot"></div>
+            <div class="dot" style="animation-delay: 0.2s"></div>
+            <div class="dot" style="animation-delay: 0.4s"></div>
+        </div>
+    </div>
+
+    <a href="http://172.29.241.141:5000/" class="btn-admin-xl"> Administration</a>
+
+    <script>
+        const socket = io();
+        const bg = document.getElementById('main-bg');
+        const icon = document.getElementById('status-icon');
+        const title = document.getElementById('title');
+        const sub = document.getElementById('subtitle');
+        const loader = document.getElementById('loader');
+        const countdownZone = document.getElementById('countdown-zone');
+        const timerSpan = document.getElementById('timer');
+
+        socket.on('resultat_badge', (data) => {
+            loader.classList.add('hidden');
+
+            if (data.status === 'vert') {
+                // --- SUCCÈS ---
+                bg.classList.add('bg-success');
+                icon.innerText = "✅";
+                title.innerText = "BIENVENUE";
+                sub.innerHTML = `<span class="text-4xl font-bold uppercase">${data.prenom}</span>`;
+                
+                // Lancer le décompte de 5 secondes
+                countdownZone.classList.remove('hidden');
+                let timeLeft = 5;
+                
+                const timerInterval = setInterval(() => {
+                    timeLeft--;
+                    timerSpan.innerText = timeLeft;
+                    
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        window.location.href = data.redirect; // REDIRECTION FINALE
+                    }
+                }, 1000);
+
+            } else {
+                // --- ERREUR ---
+                bg.classList.add('bg-error');
+                icon.innerText = "❌";
+                title.innerText = "INCONNU";
+                sub.innerText = "Badge non reconnu";
+                
+                setTimeout(resetScreen, 3000);
+            }
+        });
+
+        function resetScreen() {
+            bg.classList.remove('bg-success', 'bg-error');
+            icon.innerText = "🛜";
+            title.innerText = "SCANNEZ ICI";
+            sub.innerText = "En attente du badge...";
+            loader.classList.remove('hidden');
+            countdownZone.classList.add('hidden');
+            timerSpan.innerText = "5";
+        }
+    </script>
+</body>
+</html>

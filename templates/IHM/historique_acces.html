@@ -12,11 +12,12 @@
     <h2>RFID</h2>
     <a href="/dashboard">Tableau de bord</a>
     <a href="/materiels">Matériels</a>
-    <a href="/historique">Historique Matériel</a>
-    <a href="/historique_acces" class="actif">Journal des Accès</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces" class="actif">Journal d'accès</a>
     <a href="/utilisateurs">Utilisateurs</a>
     <a href="/pret">Prêts</a>
     <a href="/reservations">Réservations</a>
+<a href="/profil">Mon Profil</a>
     
     {% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
@@ -29,7 +30,7 @@
 
     <header class="top-bar">
         <div class="titre-page">
-            <h1>Journal des Accès Physiques</h1>
+            <h1>Journal des Accès au local</h1>
         </div>
 
         <div class="menu-utilisateur" id="userBtn">

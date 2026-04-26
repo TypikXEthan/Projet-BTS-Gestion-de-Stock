@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <title>Annuaire Utilisateurs</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+
 </head>
 
 <body class="corps-tableau-de-bord">
@@ -12,10 +14,13 @@
     <h2>RFID</h2>
     <a href="/dashboard">Tableau de bord</a>
     <a href="/materiels">Matériels</a>
-    <a href="/historique">Historique</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
     <a href="/utilisateurs" class="actif">Utilisateurs</a>
-    <a href="/pret">Prets</a>
+    <a href="/pret">Prêts</a>
     <a href="/reservations">Réservations</a>
+    <a href="/profil">Mon Profil</a>
+
     {% if session["admin"] == 1 %}
     <a href="/admin">Administration</a>
     {% endif %}
@@ -24,7 +29,7 @@
 
 <div class="contenu-tableau-de-bord">
     <header class="top-bar">
-        <h1>Annuaire Utilisateurs</h1>
+        <h1>Utilisateurs</h1>
         <div class="menu-utilisateur" id="userBtn">
             <div class="user-info">
                 <span>{{ prenom }} {{ nom }}</span>

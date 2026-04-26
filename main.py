@@ -1,12 +1,14 @@
-from flask import Flask, render_template, request, redirect, session,flash,url_for
+from flask import Flask, render_template, request, redirect, session,flash,url_for,jsonify
 import mysql.connector
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,date
 import time
+import json
+from flask_socketio import SocketIO,emit
 
 app = Flask(__name__)
 app.secret_key = "cle_secrete_bts_rfid"  # clé de session
-
+socketio = SocketIO(app, cors_allowed_origins="*")
 # Connexion à la base
 def get_db():
     return mysql.connector.connect(
@@ -135,10 +137,7 @@ def materiels():
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
-    # =========================
-    # RECHERCHE
-    # =========================
+#recherche
     recherche = request.args.get("recherche", "")
     params = []
     query = "SELECT * FROM materiel_stock"
@@ -146,10 +145,7 @@ def materiels():
     if recherche:
         query += " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s"
         params.extend([f"%{recherche}%", f"%{recherche}%"])
-
-    # =========================
-    # PAGINATION
-    # =========================
+#pagination
     page = int(request.args.get("page", 1))
     limit = 10
     offset = (page - 1) * limit
@@ -186,14 +182,12 @@ def materiels():
 def historique():
     if "id_user" not in session:
         return redirect("/")
-
-    # 1. On récupère ce que l'utilisateur a tapé (si vide, on aura une chaîne vide)
+#recuperer ce que l'utilisateur tape
     recherche = request.args.get('recherche', '').strip()
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
-    # 2. On prépare la base de la requête
+#preparation requetes 
     sql = """
         SELECT m.id_mouvement, m.type_mouvement, m.date_heure,
                ms.nom_modele,
@@ -203,7 +197,6 @@ def historique():
         LEFT JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
     """
 
-    # 3. On ajoute le filtre si une recherche est présente
     if recherche:
         sql += """ 
             WHERE ms.nom_modele LIKE %s 
@@ -215,7 +208,7 @@ def historique():
         sql += " ORDER BY m.date_heure DESC"
         cursor.execute(sql, params)
     else:
-        # Requête classique sans filtre
+#affichage classique si aucune requetes
         sql += " ORDER BY m.date_heure DESC"
         cursor.execute(sql)
 
@@ -223,13 +216,12 @@ def historique():
     cursor.close()
     db.close()
 
-    # 4. TRÈS IMPORTANT : On renvoie 'recherche' au HTML pour pas que la barre se vide
     return render_template(
         "IHM/historique.html",
         mouvements=mouvements,
         nom=session["nom"],
         prenom=session["prenom"],
-        recherche=recherche # On le rajoute ici
+        recherche=recherche 
     )
 
 # -------------------------------
@@ -272,205 +264,70 @@ def reservations():
     cursor = db.cursor(dictionary=True)
     user_id = session["id_user"]
 
-    from datetime import datetime, timedelta, date
-
-    # =========================
-    # 🔥 AUTO ANNULATION
-    # =========================
-    cursor.execute("""
-        SELECT id_reservation, id_materiel
-        FROM reservations
-        WHERE statut='Confirmée' AND date_limite < NOW()
-    """)
-    expired = cursor.fetchall()
-
-    for r in expired:
-        cursor.execute("""
-            UPDATE reservations 
-            SET statut='Annulée'
-            WHERE id_reservation=%s
-        """, (r["id_reservation"],))
-
-        cursor.execute("""
-            UPDATE materiel_stock
-            SET id_utilisateur_actuel=NULL,
-                etat='disponible'
-            WHERE id_materiel=%s
-        """, (r["id_materiel"],))
-
-    db.commit()
-
-    # =========================
-    # POST
-    # =========================
     if request.method == "POST":
         action = request.form.get("action")
 
-        # =====================
-        # 🔵 RESERVER
-        # =====================
         if action == "reserver":
-            id_materiel = request.form.get("id_materiel")
-            date_reservation = request.form.get("date_reservation")
+            id_mat = request.form.get("id_materiel")
+            d_debut = request.form.get("date_reservation")
+            d_fin = request.form.get("date_fin")
 
-            if id_materiel and date_reservation:
-                date_resa = datetime.strptime(date_reservation, "%Y-%m-%d")
-                now = datetime.now()
-
-                # ⛔ date passée
-                if date_resa.date() < now.date():
-                    return redirect("/reservations")
-
-                # ⛔ max 7 jours
-                if date_resa > now + timedelta(days=7):
-                    return redirect("/reservations")
-
-                # 📅 date limite = lendemain 8h
-                date_limite = date_resa + timedelta(days=1)
-                date_limite = date_limite.replace(hour=8, minute=0, second=0)
-
-                # 🔍 check matériel
-                cursor.execute("""
-                    SELECT etat, reservable, actif, id_utilisateur_actuel
-                    FROM materiel_stock
-                    WHERE id_materiel=%s
-                """, (id_materiel,))
-                mat = cursor.fetchone()
-
-                if mat and mat["reservable"] == 1 and mat["actif"] == 1 and mat["etat"] == "disponible":
-
-                    # 🔒 si aujourd’hui → bloquer direct
-                    if date_resa.date() == now.date():
-                        cursor.execute("""
-                            UPDATE materiel_stock
-                            SET id_utilisateur_actuel=%s,
-                                etat='reserve'
-                            WHERE id_materiel=%s
-                        """, (user_id, id_materiel))
-
-                    # 💾 insert réservation
-                    cursor.execute("""
-                        INSERT INTO reservations 
-                        (id_materiel, id_utilisateur, date_reservation, date_limite, statut)
-                        VALUES (%s,%s,%s,%s,'Confirmée')
-                    """, (id_materiel, user_id, date_resa, date_limite))
-
-                    db.commit()
-
-        # =====================
-        # 🔴 ANNULER
-        # =====================
-        elif action == "annuler":
-            id_reservation = request.form.get("id_reservation")
-
+            # Verifie si il n'existe deja pas pour eviter les conflits 
             cursor.execute("""
-                SELECT id_materiel, id_utilisateur 
-                FROM reservations 
-                WHERE id_reservation=%s
-            """, (id_reservation,))
-            res = cursor.fetchone()
-
-            if res and res["id_utilisateur"] == user_id:
+                SELECT COUNT(*) as conflit FROM reservations 
+                WHERE id_materiel = %s 
+                AND statut IN ('Confirmée', 'Récupérée', 'Retard')
+                AND NOT (date_limite < %s OR date_reservation > %s)
+            """, (id_mat, d_debut, d_fin))
+            
+            res_conflit = cursor.fetchone()
+            #mess erreur
+            if res_conflit['conflit'] > 0:
+                flash(f"Erreur : Le matériel ID {id_mat} est déjà réservé sur ces dates. Veuillez consulter la liste des réservations.", "danger")
+            else:
+                # ok alors envoye dans la bdd
                 cursor.execute("""
-                    UPDATE reservations 
-                    SET statut='Annulée'
-                    WHERE id_reservation=%s
-                """, (id_reservation,))
-
-                cursor.execute("""
-                    UPDATE materiel_stock
-                    SET id_utilisateur_actuel=NULL,
-                        etat='disponible'
-                    WHERE id_materiel=%s
-                """, (res["id_materiel"],))
-
+                    INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_limite, statut)
+                    VALUES (%s, %s, %s, %s, 'Confirmée')
+                """, (id_mat, user_id, d_debut, d_fin))
                 db.commit()
+                flash("✅ Réservation validée avec succès !", "success")
 
-        # =====================
-        # 🟢 RECUPERER
-        # =====================
-        elif action == "recuperer":
-            id_reservation = request.form.get("id_reservation")
+        return redirect(url_for('reservations'))
 
-            cursor.execute("""
-                SELECT id_materiel, statut 
-                FROM reservations 
-                WHERE id_reservation=%s
-            """, (id_reservation,))
-            res = cursor.fetchone()
-
-            if res and res["statut"] == "Confirmée":
-                id_mat = res["id_materiel"]
-
-                cursor.execute("""
-                    UPDATE materiel_stock 
-                    SET etat='indisponible'
-                    WHERE id_materiel=%s
-                """, (id_mat,))
-
-                cursor.execute("""
-                    UPDATE reservations 
-                    SET statut='Récupérée'
-                    WHERE id_reservation=%s
-                """, (id_reservation,))
-
-                cursor.execute("""
-                    INSERT INTO mouvements 
-                    (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                    VALUES (%s,%s,'Sortie',NOW())
-                """, (id_mat, user_id))
-
-                db.commit()
-
-    # =========================
-    # GET
-    # =========================
-
-    date_min = date.today().isoformat()
-    date_max = (date.today() + timedelta(days=7)).isoformat()
-
-    # 📦 matériels disponibles
-    cursor.execute("""
-        SELECT id_materiel, nom_modele, rfid_tag_epc
-        FROM materiel_stock
-        WHERE etat='disponible'
-        AND reservable=1
-        AND actif=1
-        AND id_utilisateur_actuel IS NULL
-    """)
+    cursor.execute("SELECT id_materiel, nom_modele FROM materiel_stock WHERE actif=1 AND reservable=1")
     materiels = cursor.fetchall()
 
-    # 📋 mes réservations
     cursor.execute("""
-        SELECT r.*, ms.nom_modele
-        FROM reservations r
-        JOIN materiel_stock ms ON r.id_materiel=ms.id_materiel
-        WHERE r.id_utilisateur=%s
-        AND r.date_reservation >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        SELECT r.*, ms.nom_modele FROM reservations r
+        JOIN materiel_stock ms ON r.id_materiel = ms.id_materiel
+        WHERE r.id_utilisateur = %s 
         ORDER BY r.date_reservation DESC
     """, (user_id,))
-    mes_reservations = cursor.fetchall()
+    mes_res = cursor.fetchall()
 
-    cursor.close()
+    for r in mes_res:
+        if isinstance(r['date_limite'], datetime):
+            r['date_limite'] = r['date_limite'].date()
+        if isinstance(r['date_reservation'], datetime):
+            r['date_reservation'] = r['date_reservation'].date()
+
     db.close()
+    return render_template("IHM/reservations.html", 
+                           materiels=materiels, 
+                           mes_reservations=mes_res,
+                           aujourdhui=date.today(),
+                           prenom=session.get("prenom"),
+                           nom=session.get("nom"))
 
-    return render_template(
-        "IHM/reservations.html",
-        materiels=materiels,
-        mes_reservations=mes_reservations,
-        date_min=date_min,
-        date_max=date_max,
-        nom=session["nom"],
-        prenom=session["prenom"],
-        admin=session.get("admin", 0)
-    )
+
 
 #-----------------
 #Administration
 #-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
-    # Sécurité : Vérifier si l'utilisateur est connecté et admin
+    # Verifie que l'utilsateur est bien admin=1 dans labdd 
     if "id_user" not in session or session.get("admin") != 1:
         flash("Accès réservé aux administrateurs.", "danger")
         return redirect("/")
@@ -481,16 +338,15 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        # --- 1. MODIFIER LES HORAIRES D'ACCÈS ---
+        #Horraire access modifier
         if action == "modifier_horaires_globaux":
             h_debut = request.form.get("h_debut")
             h_fin = request.form.get("h_fin")
-            # On met à jour la configuration dans la table portes
             cursor.execute("UPDATE portes SET heure_debut = %s, heure_fin = %s", (h_debut, h_fin))
             db.commit()
             flash("Horaires de passage mis à jour avec succès.", "success")
 
-        # --- 2. CRÉER UN NOUVEL UTILISATEUR ---
+        # Creer utilisateur
         elif action == "creer_utilisateur":
             nom = request.form.get("nom")
             prenom = request.form.get("prenom")
@@ -502,7 +358,7 @@ def admin():
             role = request.form.get("role")
             admin_status = request.form.get("admin_status")
 
-            # Sécurité : Hachage du mot de passe et du badge
+            # Hachage du mot de passe et du badge
             mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
             badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
 
@@ -516,13 +372,12 @@ def admin():
             except mysql.connector.Error as err:
                 flash(f"Erreur lors de la création : {err}", "danger")
 
-        # --- 3. MODIFIER UN UTILISATEUR EXISTANT ---
+        #Modifier un utilisateur
         elif action == "modifier_utilisateur_complet":
             id_u = request.form.get("id_utilisateur")
             nouveau_mdp = request.form.get("nouveau_mdp")
             nouveau_badge = request.form.get("badge_uid")
 
-            # Mise à jour des infos de base
             cursor.execute("""
                 UPDATE utilisateurs SET utilisateur=%s, nom=%s, prenom=%s, email=%s, telephone=%s, role=%s, admin=%s
                 WHERE id_utilisateur=%s
@@ -543,7 +398,7 @@ def admin():
             db.commit()
             flash("Profil utilisateur mis à jour.", "info")
 
-        # --- 4. SUPPRIMER UN UTILISATEUR ---
+        # SUPPRIMER UN UTILISATEUR 
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
@@ -553,7 +408,7 @@ def admin():
                 db.commit()
                 flash("Utilisateur supprimé définitivement.", "warning")
 
-        # --- 5. AJOUTER DU MATÉRIEL ---
+        # AJOUT MATÉRIEL
         elif action == "ajouter_materiel":
             id_inv = request.form.get("id_inventaire")
             nom_m = request.form.get("nom_modele")
@@ -567,7 +422,7 @@ def admin():
             db.commit()
             flash("Nouveau matériel ajouté au stock.", "success")
 
-        # --- 6. MODIFIER MATÉRIEL (Statut, Attribution) ---
+        #MODIF MATÉRIEL
         elif action == "modifier_materiel_complet":
             id_m = request.form.get("id_materiel")
             u_actuel = request.form.get("id_utilisateur_actuel")
@@ -584,8 +439,6 @@ def admin():
             flash("Fiche matériel mise à jour.", "info")
 
         return redirect(url_for('admin'))
-
-    # --- PRÉPARATION DES DONNÉES POUR LE TEMPLATE (GET) ---
     
     # Horaires
     cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
@@ -642,11 +495,10 @@ def pret():
 
             db.commit()
 
-        # 🟢 ACCEPTER UNE DEMANDE
+        # ACCEPTER UNE DEMANDE
         elif action == "accepter":
             id_pret = request.form["id_pret"]
 
-            # récupérer infos du prêt
             cursor.execute("""
                 SELECT id_materiel, id_emprunteur
                 FROM prets
@@ -655,7 +507,6 @@ def pret():
             pret = cursor.fetchone()
 
             if pret:
-                # transfert du matériel
                 cursor.execute("""
                     UPDATE materiel_stock
                     SET id_utilisateur_actuel=%s,
@@ -663,7 +514,6 @@ def pret():
                     WHERE id_materiel=%s
                 """, (pret["id_emprunteur"], pret["id_materiel"]))
 
-                # mise à jour du prêt
                 cursor.execute("""
                     UPDATE prets
                     SET statut='accepte',
@@ -686,11 +536,6 @@ def pret():
 
             db.commit()
 
-    # =========================
-    # DATA
-    # =========================
-
-    # 📦 matériels que je possède
     cursor.execute("""
         SELECT id_materiel, nom_modele
         FROM materiel_stock
@@ -698,7 +543,6 @@ def pret():
     """, (user_id,))
     mes_materiels = cursor.fetchall()
 
-    # 👥 autres utilisateurs
     cursor.execute("""
         SELECT id_utilisateur, nom, prenom
         FROM utilisateurs
@@ -744,6 +588,7 @@ def pret():
     )
 #--------------------
 #Profil
+#--------------------
 @app.route("/profil")
 @app.route("/profil/<int:user_id>")
 def profil(user_id=None):
@@ -753,8 +598,6 @@ def profil(user_id=None):
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    # LOGIQUE : Si user_id est dans l'URL, on prend celui-là. 
-    # Sinon, on prend celui de la personne connectée (session).
     target_id = user_id if user_id is not None else session["id_user"]
 
     # 1. Infos de l'utilisateur cible (soit moi, soit un autre)
@@ -845,6 +688,116 @@ def historique_access_page():
         recherche=recherche  # On renvoie la recherche pour qu'elle reste dans l'input
     )
 
+@app.route("/reservation_materiel_liste/<int:id_mat>")
+def reservation_materiel_liste(id_mat):
+    if "id_user" not in session:
+        return redirect("/")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    # 1. Récupérer les infos du matériel cliqué
+    cursor.execute("SELECT * FROM materiel_stock WHERE id_materiel = %s", (id_mat,))
+    materiel = cursor.fetchone()
+
+    if not materiel:
+        flash("Matériel introuvable", "danger")
+        return redirect("/materiels")
+
+    # 2. Récupérer les réservations en cours et futures pour ce matériel
+    # On fait une jointure pour savoir QUI a réservé
+    cursor.execute("""
+        SELECT r.*, u.nom, u.prenom 
+        FROM reservations r
+        JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
+        WHERE r.id_materiel = %s 
+        AND r.statut IN ('Confirmée', 'Récupérée', 'Retard')
+        ORDER BY r.date_reservation ASC
+    """, (id_mat,))
+    reservations_futures = cursor.fetchall()
+
+    db.close()
+    
+    return render_template(
+        "IHM/reservation_materiel_liste.html",
+        materiel=materiel,
+        reservations=reservations_futures,
+        aujourdhui=date.today(),
+        prenom=session["prenom"],
+        nom=session["nom"]
+    )
+#----------------------------
+#######TABLETTE##############
+#----------------------------
+@app.route("/tablette")
+def ecran_accueil():
+    return render_template("Ecran/accueil.html")
+
+@app.route('/verifier_acces', methods=['POST'])
+def verifier_acces():
+    data = request.json
+    badge_uid = str(data.get('badge_uid')).strip()
+    
+    # 1. Préparation des infos de date/heure pour la BDD
+    maintenant = datetime.now()
+    date_j = maintenant.date()
+    heure_j = maintenant.strftime("%H:%M:%S")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    try:
+        # 2. Vérification de l'utilisateur
+        cursor.execute("SELECT id_utilisateur, nom, prenom FROM utilisateurs WHERE badge_uid = %s", (badge_uid,))
+        user = cursor.fetchone()
+
+        if user:
+            # ✅ ACCÈS AUTORISÉ
+            # Enregistrement en BDD
+            cursor.execute("""
+                INSERT INTO historique_acces (id_utilisateur, id_porte_physique, date_acces, heure_acces, statut_acces)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user['id_utilisateur'], "PORTE_PRINCIPALE", date_j, heure_j, "Autorisé"))
+            db.commit()
+
+            # --- ENVOI DES INFOS À LA TABLETTE ---
+            # IMPORTANT : On ajoute 'redirect' pour éviter le "undefined"
+            socketio.emit('resultat_badge', {
+                'status': 'vert',
+                'nom': user['nom'],
+                'prenom': user['prenom'],
+                'redirect': '/tablette/flux_materiel'  # C'est cette ligne qui manquait !
+            })
+            
+            return jsonify({"status": "autorise"}), 200
+
+        else:
+            # ❌ ACCÈS REFUSÉ (Badge inconnu)
+            cursor.execute("""
+                INSERT INTO historique_acces (id_utilisateur, id_porte_physique, date_acces, heure_acces, statut_acces)
+                VALUES (NULL, %s, %s, %s, %s)
+            """, ("PORTE_PRINCIPALE", date_j, heure_j, "Refusé - Inconnu"))
+            db.commit()
+
+            # Signal rouge à la tablette
+            socketio.emit('resultat_badge', {
+                'status': 'rouge'
+            })
+            
+            return jsonify({"status": "refuse"}), 403
+
+    except Exception as e:
+        print(f"Erreur Serveur: {e}")
+        return jsonify({"status": "erreur"}), 500
+    finally:
+        cursor.close()
+        db.close()
+@app.route("/tablette/flux_materiel")
+def flux_materiel():
+    # Aucun SQL ici, donc aucune erreur possible
+    return render_template("Ecran/flux_materiel.html")
+
+
 # -------------------------------
 # LOGOUT
 # -------------------------------
@@ -858,5 +811,4 @@ def logout():
 # -------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-#app.run(host="0.0.0.0", port=5000, ssl_context=("cert.pem", "key.pem"))
-
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
