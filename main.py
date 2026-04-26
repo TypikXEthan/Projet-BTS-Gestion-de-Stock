@@ -9,6 +9,8 @@ from flask_socketio import SocketIO,emit
 app = Flask(__name__)
 app.secret_key = "cle_secrete_bts_rfid"  # clé de session
 socketio = SocketIO(app, cors_allowed_origins="*")
+session_scan ={}
+
 # Connexion à la base
 def get_db():
     return mysql.connector.connect(
@@ -799,6 +801,7 @@ def flux_materiel():
 
 @app.route("/scan_objet", methods=['POST'])
 def scan_objet():
+    global session_scan
     data = request.json
     tag_epc = data.get('rfid_tag_epc')
     
@@ -808,39 +811,118 @@ def scan_objet():
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
-        # 1. On récupère le matériel
-        cursor.execute("SELECT id_materiel, nom_modele, rfid_tag_epc, etat FROM materiel_stock WHERE rfid_tag_epc = %s", (tag_epc,))
+        cursor.execute("SELECT id_materiel, nom_modele, etat FROM materiel_stock WHERE rfid_tag_epc = %s", (tag_epc,))
         item = cursor.fetchone()
         
         if item:
-            # 2. Logique de bascule (Toggle)
-            # On normalise pour éviter les erreurs de texte (Disponible / Sortie)
-            etat_actuel = str(item['etat']).strip().capitalize()
-            nouveau_etat = "Sortie" if etat_actuel == "Disponible" else "Disponible"
+            # Si l'objet est déjà dans la liste temporaire, on bascule son état prévu
+            if tag_epc in session_scan:
+                nouveau = "Disponible" if session_scan[tag_epc]['etat'] == "Sortie" else "Sortie"
+                session_scan[tag_epc]['etat'] = nouveau
+            else:
+                # Sinon, on regarde son état actuel en BDD pour proposer l'inverse
+                etat_actuel = str(item['etat']).strip().capitalize()
+                nouveau = "Sortie" if etat_actuel == "Disponible" else "Disponible"
+                session_scan[tag_epc] = {
+                    'id': item['id_materiel'],
+                    'nom': item['nom_modele'],
+                    'etat': nouveau
+                }
             
-            # 3. MISE À JOUR DE LA BDD (C'est Flask qui commande)
-            cursor.execute("UPDATE materiel_stock SET etat = %s WHERE id_materiel = %s", (nouveau_etat, item['id_materiel']))
-            db.commit()
-            
-            # 4. ENVOI À LA TABLETTE
+            # Envoi à la tablette via SocketIO (on utilise tag_epc comme ID pour le DOM)
             socketio.emit('mouvement_stock', {
-                'id': item['id_materiel'],
+                'id': tag_epc,
                 'nom': item['nom_modele'],
-                'tag': item['rfid_tag_epc'],
-                'etat': nouveau_etat
+                'etat': session_scan[tag_epc]['etat']
             })
+            return jsonify({"status": "ok"}), 200
             
-            print(f"🔄 [BDD] {item['nom_modele']} passé de {etat_actuel} à {nouveau_etat}")
-            return jsonify({"status": "ok", "nouveau_etat": nouveau_etat}), 200
-            
-        return jsonify({"status": "not_found", "message": "Matériel inconnu"}), 404
-
-    except Exception as e:
-        print(f"❌ Erreur BDD : {e}")
-        return jsonify({"status": "error"}), 500
+        return jsonify({"status": "not_found"}), 404
     finally:
         cursor.close()
         db.close()
+
+
+@app.route("/supprimer_de_session", methods=['POST'])
+def supprimer_de_session():
+    global session_scan
+    tag_epc = request.json.get('rfid_tag_epc')
+    if tag_epc in session_scan:
+        del session_scan[tag_epc]
+    return jsonify({"status": "ok"})
+
+@app.route("/valider_session_finale", methods=['POST'])
+def valider_session_finale():
+    global session_scan
+    data = request.json
+    user_login = data.get('user')
+    password = data.get('password')
+    
+    mdp_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        # 1. Vérifier l'identité de l'utilisateur qui valide
+        cursor.execute("SELECT id_utilisateur, nom, prenom FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
+        valideur = cursor.fetchone()
+        
+        if not valideur:
+            return jsonify({"status": "error", "message": "Identifiants incorrects"}), 403
+
+        id_valideur = valideur['id_utilisateur']
+
+        # 2. Vérifier les conflits de réservation avant d'écrire quoi que ce soit
+        for tag, infos in session_scan.items():
+            # On cherche une réservation 'Confirmée' pour ce matériel aujourd'hui
+            cursor.execute("""
+                SELECT id_reservation, id_utilisateur 
+                FROM reservations 
+                WHERE id_materiel = %s AND statut = 'Confirmée'
+                AND CURDATE() BETWEEN date_reservation AND date_limite
+            """, (infos['id'],))
+            res_active = cursor.fetchone()
+
+            if res_active:
+                # Si le matériel est réservé par quelqu'un d'AUTRE
+                if res_active['id_utilisateur'] != id_valideur:
+                    cursor.execute("SELECT nom, prenom FROM utilisateurs WHERE id_utilisateur = %s", (res_active['id_utilisateur'],))
+                    proprio = cursor.fetchone()
+                    msg = f"Conflit : Le matériel '{infos['nom']}' est réservé par {proprio['prenom']} {proprio['nom']}."
+                    return jsonify({"status": "error", "message": msg}), 400
+                
+                # Si c'est sa propre réservation, on la marquera comme 'Récupérée' plus bas
+                infos['id_res_a_maj'] = res_active['id_reservation']
+
+        # 3. Si on arrive ici, aucun conflit n'a été trouvé : on valide tout
+        for tag, infos in session_scan.items():
+            # Mise à jour du stock
+            cursor.execute("UPDATE materiel_stock SET etat = %s, id_utilisateur_actuel = %s WHERE rfid_tag_epc = %s", 
+                           (infos['etat'], id_valideur, tag))
+            
+            # Si c'était une réservation perso, on met à jour le statut de la résa
+            if 'id_res_a_maj' in infos:
+                cursor.execute("UPDATE reservations SET statut = 'Récupérée' WHERE id_reservation = %s", (infos['id_res_a_maj'],))
+            
+            # Insertion dans l'historique des mouvements
+            type_mouv = "Entrée" if infos['etat'] == "Disponible" else "Sortie"
+            cursor.execute("""
+                INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
+                VALUES (%s, %s, %s, NOW())
+            """, (infos['id'], id_valideur, type_mouv))
+        
+        db.commit()
+        session_scan = {} # Reset de la session
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        db.rollback() # Annule tout en cas d'erreur
+        print(f"Erreur validation: {e}")
+        return jsonify({"status": "error", "message": "Erreur SQL interne"}), 500
+    finally:
+        cursor.close()
+        db.close()
+
 # -------------------------------
 # LOGOUT
 # -------------------------------
