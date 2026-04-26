@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ecran.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
 </head>
-<body id="main-bg">
+<body id="main-bg" class="transition-colors duration-500">
 
     <div class="glass-card">
         <div id="status-icon" class="text-9xl mb-6 animate-pulse">🛜</div>
@@ -16,7 +16,7 @@
         <p id="subtitle" class="text-2xl text-blue-200">En attente du badge...</p>
 
         <div id="countdown-zone" class="hidden mt-8 text-white text-xl font-bold bg-white/20 py-2 px-6 rounded-full">
-            Redirection dans <span id="timer">5</span>s...
+            Redirection dans <span id="timer">3</span>s...
         </div>
 
         <div id="loader" class="mt-10 flex justify-center space-x-3">
@@ -29,7 +29,9 @@
     <a href="http://172.29.241.141:5000/" class="btn-admin-xl"> Administration</a>
 
     <script>
+        // Initialisation du socket
         const socket = io();
+        
         const bg = document.getElementById('main-bg');
         const icon = document.getElementById('status-icon');
         const title = document.getElementById('title');
@@ -38,19 +40,28 @@
         const countdownZone = document.getElementById('countdown-zone');
         const timerSpan = document.getElementById('timer');
 
+        // Debug : savoir si on est connecté au serveur
+        socket.on('connect', () => {
+            console.log("✅ Connecté au serveur Socket.IO");
+        });
+
         socket.on('resultat_badge', (data) => {
+            console.log("📥 Signal reçu :", data); // Pour vérifier ce que le Python envoie réellement
+            
             loader.classList.add('hidden');
 
             if (data.status === 'vert') {
                 // --- SUCCÈS ---
                 bg.classList.add('bg-success');
                 icon.innerText = "✅";
+                icon.classList.remove('animate-pulse');
                 title.innerText = "BIENVENUE";
                 sub.innerHTML = `<span class="text-4xl font-bold uppercase">${data.prenom}</span>`;
                 
-                // Lancer le décompte de 5 secondes
+                // Lancer le décompte
                 countdownZone.classList.remove('hidden');
-                let timeLeft = 5;
+                let timeLeft = 3; // Réduit à 3s pour plus de fluidité
+                timerSpan.innerText = timeLeft;
                 
                 const timerInterval = setInterval(() => {
                     timeLeft--;
@@ -58,7 +69,13 @@
                     
                     if (timeLeft <= 0) {
                         clearInterval(timerInterval);
-                        window.location.href = data.redirect; // REDIRECTION FINALE
+                        
+                        // Détermination de l'URL (secours si data.redirect est vide)
+                        const destination = data.redirect || '/tablette/flux_materiel';
+                        console.log("🚀 Redirection vers :", destination);
+                        
+                        // Redirection forcée
+                        window.location.assign(destination);
                     }
                 }, 1000);
 
@@ -66,6 +83,7 @@
                 // --- ERREUR ---
                 bg.classList.add('bg-error');
                 icon.innerText = "❌";
+                icon.classList.remove('animate-pulse');
                 title.innerText = "INCONNU";
                 sub.innerText = "Badge non reconnu";
                 
@@ -76,11 +94,12 @@
         function resetScreen() {
             bg.classList.remove('bg-success', 'bg-error');
             icon.innerText = "🛜";
-            title.innerText = "SCANNEZ ICI";
+            icon.classList.add('animate-pulse');
+            title.innerText = "SCANNEZ VOTRE BADGE ICI";
             sub.innerText = "En attente du badge...";
             loader.classList.remove('hidden');
             countdownZone.classList.add('hidden');
-            timerSpan.innerText = "5";
+            timerSpan.innerText = "3";
         }
     </script>
 </body>

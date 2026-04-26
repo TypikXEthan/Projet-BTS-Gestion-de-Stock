@@ -7,6 +7,7 @@
     --vert: #38a169;
 }
 
+/* --- BASE COMMUNE --- */
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -14,10 +15,15 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
     overflow: hidden;
     transition: background 0.4s ease;
+    color: white;
+}
+
+/* --- PAGE SCAN BADGE (Centrage automatique) --- */
+body:has(.glass-card) {
+    justify-content: center;
+    align-items: center;
 }
 
 .glass-card {
@@ -46,16 +52,129 @@ body {
     transition: all 0.2s ease;
 }
 
+.btn-admin-xl:hover { transform: scale(1.05); }
+
+/* --- PAGE FLUX MATÉRIEL --- */
+
+/* Header */
+.header-flux {
+    width: 100%;
+    padding: 1.5rem 2rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Conteneur des colonnes */
+.flux-container {
+    display: flex;
+    flex: 1;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 100%; /* Utilise tout l'écran */
+    overflow: hidden;
+}
+
+.glass-column {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 2rem;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+
+.column-header {
+    padding: 1.5rem;
+    font-weight: 900;
+    font-size: 1.6rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Cartes Matériel */
+.item-card {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 1.2rem;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 6px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.item-card.is-dispo { border-left-color: var(--vert); }
+.item-card.is-sortie { border-left-color: var(--rouge); }
+
+/* Zone de scroll */
+.scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.scroll-area::-webkit-scrollbar { width: 6px; }
+.scroll-area::-webkit-scrollbar-thumb { 
+    background: rgba(255,255,255,0.2); 
+    border-radius: 10px; 
+}
+
+/* Barre d'Actions Basse */
+.actions-bar {
+    width: 100%;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.btn-action {
+    padding: 1rem 2.5rem;
+    border-radius: 1rem;
+    font-weight: 800;
+    text-decoration: none;
+    transition: all 0.2s;
+    text-transform: uppercase;
+}
+
+.btn-blue { background: var(--bleu-principal); color: white; }
+.btn-white { background: var(--blanc); color: var(--bleu-fonce); }
+.btn-red { background: var(--rouge); color: white; }
+
+.btn-action:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+/* --- ÉTATS ET ANIMATIONS --- */
 .bg-success { background: var(--vert) !important; }
 .bg-error { background: var(--rouge) !important; }
 
 .dot {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     background: white;
     border-radius: 50%;
     animation: bounce 0.6s infinite alternate;
 }
-@keyframes bounce { to { transform: translateY(-12px); opacity: 0.4; } }
+
+@keyframes bounce { 
+    to { transform: translateY(-10px); opacity: 0.4; } 
+}
+
+.new-scan {
+    animation: slideIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 .hidden { display: none; }
