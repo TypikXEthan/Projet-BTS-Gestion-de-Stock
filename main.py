@@ -792,12 +792,55 @@ def verifier_acces():
     finally:
         cursor.close()
         db.close()
+
 @app.route("/tablette/flux_materiel")
 def flux_materiel():
-    # Aucun SQL ici, donc aucune erreur possible
     return render_template("Ecran/flux_materiel.html")
 
+@app.route("/scan_objet", methods=['POST'])
+def scan_objet():
+    data = request.json
+    tag_epc = data.get('rfid_tag_epc')
+    
+    if not tag_epc:
+        return jsonify({"status": "error", "message": "Tag manquant"}), 400
 
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        # 1. On récupère le matériel
+        cursor.execute("SELECT id_materiel, nom_modele, rfid_tag_epc, etat FROM materiel_stock WHERE rfid_tag_epc = %s", (tag_epc,))
+        item = cursor.fetchone()
+        
+        if item:
+            # 2. Logique de bascule (Toggle)
+            # On normalise pour éviter les erreurs de texte (Disponible / Sortie)
+            etat_actuel = str(item['etat']).strip().capitalize()
+            nouveau_etat = "Sortie" if etat_actuel == "Disponible" else "Disponible"
+            
+            # 3. MISE À JOUR DE LA BDD (C'est Flask qui commande)
+            cursor.execute("UPDATE materiel_stock SET etat = %s WHERE id_materiel = %s", (nouveau_etat, item['id_materiel']))
+            db.commit()
+            
+            # 4. ENVOI À LA TABLETTE
+            socketio.emit('mouvement_stock', {
+                'id': item['id_materiel'],
+                'nom': item['nom_modele'],
+                'tag': item['rfid_tag_epc'],
+                'etat': nouveau_etat
+            })
+            
+            print(f"🔄 [BDD] {item['nom_modele']} passé de {etat_actuel} à {nouveau_etat}")
+            return jsonify({"status": "ok", "nouveau_etat": nouveau_etat}), 200
+            
+        return jsonify({"status": "not_found", "message": "Matériel inconnu"}), 404
+
+    except Exception as e:
+        print(f"❌ Erreur BDD : {e}")
+        return jsonify({"status": "error"}), 500
+    finally:
+        cursor.close()
+        db.close()
 # -------------------------------
 # LOGOUT
 # -------------------------------
