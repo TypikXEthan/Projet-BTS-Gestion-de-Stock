@@ -1,90 +1,103 @@
-from flask import Flask, render_template, request, redirect, session,flash,url_for,jsonify
+from flask import Flask, render_template, request, redirect, session, flash, url_for, jsonify
 import mysql.connector
 import hashlib
-from datetime import datetime, timedelta,date
+from datetime import datetime, timedelta, date
 import time
 import json
-from flask_socketio import SocketIO,emit
+from flask_socketio import SocketIO, emit
+import uuid
+import os # <--- Ajoute ça
+from dotenv import load_dotenv # <--- Ajoute ça
+
+# Charger les variables du fichier .env
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "cle_secrete_bts_rfid"  # clé de session
-socketio = SocketIO(app, cors_allowed_origins="*")
-session_scan ={}
 
-# Connexion à la base
+# On récupère la clé du .env ou on met une valeur de secours
+app.secret_key = os.getenv('SECRET_KEY', 'cle_par_defaut_pas_secure')
+
+socketio = SocketIO(app, cors_allowed_origins="*")
+session_scan = {}
+
 def get_db():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="1234",
-        database="Projet_BTS_RFID"
+        host=os.getenv('DB_HOST'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        database=os.getenv('DB_NAME')
     )
+
+# Garde la session active 60 minutes
 @app.before_request
 def make_session_permanent():
     session.permanent = True
-    # On définit la durée d'activité à 60 minutes
     app.permanent_session_lifetime = timedelta(minutes=60)
 
-# -------------------------------
-# LOGIN
-# -------------------------------
+##### LOGIN #####
 @app.route("/", methods=["GET", "POST"])
 def login():
-    # 1. Vérifier si l'utilisateur est actuellement sous le coup d'une attente
+    # Gestion du blocage après trop de tentatives
     if "bloque_jusqua" in session:
         temps_restant = int(session["bloque_jusqua"] - time.time())
         if temps_restant > 0:
-            return render_template("IHM/login.html", 
-                                   erreur=f"Trop de tentatives. Réessayez dans {temps_restant} secondes.",
-                                   attente=temps_restant) # On envoie le temps au HTML
+            return render_template("IHM/login.html", erreur=f"Bloqué. Attendez {temps_restant}s.", attente=temps_restant)
         else:
-            # Le temps est écoulé, on réinitialise
             session.pop("bloque_jusqua", None)
             session["tentatives"] = 0
 
     if request.method == "POST":
         utilisateur = request.form["utilisateur"]
         mot_de_passe = request.form["mot_de_passe"]
-        mdp_hash = hashlib.sha256(mot_de_passe.encode()).hexdigest()
 
         db = get_db()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT id_utilisateur, utilisateur, nom, prenom, role, admin
-            FROM utilisateurs
-            WHERE utilisateur=%s AND mot_de_passe=%s
-        """, (utilisateur, mdp_hash))
+
+        # On cherche l'utilisateur par son nom uniquement
+        cursor.execute("SELECT * FROM utilisateurs WHERE utilisateur=%s", (utilisateur,))
         user = cursor.fetchone()
+
         cursor.close()
         db.close()
 
         if user:
-            # Succès : on nettoie la session
-            session.pop("tentatives", None)
-            session.pop("bloque_jusqua", None)
+            # On récupère le sel stocké en BDD
+            user_salt = user.get('salt')
             
-            session["id_user"] = user["id_utilisateur"]
-            session["utilisateur"] = user["utilisateur"]
-            session["nom"] = user["nom"]
-            session["prenom"] = user["prenom"]
-            session["role"] = user["role"]
-            session["admin"] = user["admin"]
-            return redirect("/dashboard")
-        else:
-            # Échec : on incrémente le compteur
-            session["tentatives"] = session.get("tentatives", 0) + 1
-            
-            if session["tentatives"] >= 3:
-                # On bloque pour 90 secondes à partir de maintenant
-                session["bloque_jusqua"] = time.time() + 90
-                return render_template("IHM/login.html", 
-                                       erreur="Trop d'échecs. Compte bloqué pour 90 secondes.",
-                                       attente=90)
-            
-            return render_template("IHM/login.html", 
-                                   erreur=f"Identifiants incorrects ({session['tentatives']}/3)")
+            # SECURITÉ : On vérifie si l'utilisateur a bien un Salt en BDD
+            # Cela évite l'erreur "TypeError: can only concatenate str (not NoneType)"
+            if user_salt:
+                # Calcul du hash avec le Salt (Nouvelle méthode)
+                hash_test = hashlib.sha256((mot_de_passe + user_salt).encode()).hexdigest()
+            else:
+                # Ancienne méthode si le Salt n'existe pas encore pour cet utilisateur
+                hash_test = hashlib.sha256(mot_de_passe.encode()).hexdigest()
+
+            # Comparaison du hash calculé avec celui de la BDD
+            if user["mot_de_passe"] == hash_test:
+                session.update({
+                    "id_user": user["id_utilisateur"], 
+                    "utilisateur": user["utilisateur"],
+                    "nom": user["nom"], 
+                    "prenom": user["prenom"],
+                    "role": user["role"], 
+                    "admin": user["admin"]
+                })
+                session.pop("tentatives", None)
+                return redirect("/dashboard")
+
+        # Échec de connexion : incrémentation du compteur
+        session["tentatives"] = session.get("tentatives", 0) + 1
+        
+        if session["tentatives"] >= 3:
+            # Blocage de 90 secondes après 3 échecs
+            session["bloque_jusqua"] = time.time() + 90
+            return render_template("IHM/login.html", erreur="Compte bloqué (90s)", attente=90)
+
+        return render_template("IHM/login.html", erreur=f"Identifiants incorrects ({session['tentatives']}/3)")
 
     return render_template("IHM/login.html")
+
 # -------------------------------
 # DASHBOARD
 # -------------------------------
@@ -104,7 +117,7 @@ def dashboard():
     cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE etat = 'Sortie'")
     nb_sorti = cursor.fetchone()["total"]
 
-    # Derniers mouvements (10 derniers)
+    # Derniers mouvements 10
     cursor.execute("""
         SELECT m.type_mouvement, m.date_heure,
                ms.nom_modele,
@@ -274,7 +287,7 @@ def reservations():
             d_debut = request.form.get("date_reservation")
             d_fin = request.form.get("date_fin")
 
-            # Verifie si il n'existe deja pas pour eviter les conflits 
+            # Verifie si il n'y a pas deja de reserv pour eviter les conflits 
             cursor.execute("""
                 SELECT COUNT(*) as conflit FROM reservations 
                 WHERE id_materiel = %s 
@@ -327,6 +340,9 @@ def reservations():
 #-----------------
 #Administration
 #-----------------
+#-----------------
+#Administration
+#-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     # Vérifie que l'utilisateur est bien admin=1 dans la bdd 
@@ -340,7 +356,7 @@ def admin():
     if request.method == "POST":
         action = request.form.get("action")
 
-        # --- ACTION : SUPPRIMER RÉSERVATION ---
+        # --- SUPPRIMER RÉSERVATION ---
         if action == "supprimer_reservation":
             id_res = request.form.get("id_reservation")
             try:
@@ -350,7 +366,7 @@ def admin():
             except mysql.connector.Error as err:
                 flash(f"Erreur lors de l'annulation : {err}", "danger")
 
-        # --- ACTION : HORAIRES ---
+        # --- GÉRER HORAIRES ---
         elif action == "modifier_horaires_globaux":
             h_debut = request.form.get("h_debut")
             h_fin = request.form.get("h_fin")
@@ -358,7 +374,7 @@ def admin():
             db.commit()
             flash("Horaires de passage mis à jour avec succès.", "success")
 
-        # --- ACTION : CRÉER UTILISATEUR ---
+        # --- CRÉER UTILISATEUR (AVEC SALT) ---
         elif action == "creer_utilisateur":
             nom = request.form.get("nom")
             prenom = request.form.get("prenom")
@@ -370,25 +386,31 @@ def admin():
             role = request.form.get("role")
             admin_status = request.form.get("admin_status")
 
-            mdp_hash = hashlib.sha256(mdp_clair.encode()).hexdigest()
+            # Génération du Salt unique
+            nouveau_salt = uuid.uuid4().hex
+            # Hashage du mot de passe avec le Salt
+            mdp_hash = hashlib.sha256((mdp_clair + nouveau_salt).encode()).hexdigest()
+            
+            # Hashage du badge (Hash simple pour la performance au scan)
             badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
 
             try:
                 cursor.execute("""
-                    INSERT INTO utilisateurs (utilisateur, mot_de_passe, badge_uid, nom, prenom, email, telephone, role, admin) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (login_user, mdp_hash, badge_hash, nom, prenom, email, tel, role, admin_status))
+                    INSERT INTO utilisateurs (utilisateur, mot_de_passe, salt, badge_uid, nom, prenom, email, telephone, role, admin) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (login_user, mdp_hash, nouveau_salt, badge_hash, nom, prenom, email, tel, role, admin_status))
                 db.commit()
                 flash(f"L'utilisateur {prenom} {nom} a été créé.", "success")
             except mysql.connector.Error as err:
                 flash(f"Erreur lors de la création : {err}", "danger")
 
-        # --- ACTION : MODIFIER UTILISATEUR ---
+        # --- MODIFIER UTILISATEUR (AVEC SALT) ---
         elif action == "modifier_utilisateur_complet":
             id_u = request.form.get("id_utilisateur")
             nouveau_mdp = request.form.get("nouveau_mdp")
             nouveau_badge = request.form.get("badge_uid")
 
+            # Mise à jour des infos de base
             cursor.execute("""
                 UPDATE utilisateurs SET utilisateur=%s, nom=%s, prenom=%s, email=%s, telephone=%s, role=%s, admin=%s
                 WHERE id_utilisateur=%s
@@ -396,18 +418,22 @@ def admin():
                   request.form.get("email"), request.form.get("telephone"),
                   request.form.get("role"), request.form.get("admin_status"), id_u))
             
+            # Si un nouveau badge est renseigné
             if nouveau_badge and nouveau_badge.strip() != "":
                 b_hash = hashlib.sha256(nouveau_badge.encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET badge_uid=%s WHERE id_utilisateur=%s", (b_hash, id_u))
 
+            # Si un nouveau mot de passe est renseigné (Régénération du Salt)
             if nouveau_mdp and nouveau_mdp.strip() != "":
-                m_hash = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
-                cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s WHERE id_utilisateur=%s", (m_hash, id_u))
+                nouveau_sel = uuid.uuid4().hex
+                m_hash = hashlib.sha256((nouveau_mdp + nouveau_sel).encode()).hexdigest()
+                cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s, salt=%s WHERE id_utilisateur=%s", 
+                               (m_hash, nouveau_sel, id_u))
                 
             db.commit()
             flash("Profil utilisateur mis à jour.", "info")
 
-        # --- ACTION : SUPPRIMER UTILISATEUR ---
+        # --- SUPPRIMER UTILISATEUR ---
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
@@ -417,7 +443,7 @@ def admin():
                 db.commit()
                 flash("Utilisateur supprimé définitivement.", "warning")
 
-        # --- ACTION : AJOUTER MATÉRIEL ---
+        # --- AJOUTER MATÉRIEL ---
         elif action == "ajouter_materiel":
             cursor.execute("""
                 INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
@@ -427,7 +453,7 @@ def admin():
             db.commit()
             flash("Nouveau matériel ajouté au stock.", "success")
 
-        # --- ACTION : MODIFIER MATÉRIEL ---
+        # --- MODIFIER MATÉRIEL ---
         elif action == "modifier_materiel_complet":
             id_m = request.form.get("id_materiel")
             u_actuel = request.form.get("id_utilisateur_actuel")
@@ -444,21 +470,17 @@ def admin():
 
         return redirect(url_for('admin'))
     
-    # --- RÉCUPÉRATION DES DONNÉES ---
-    # 1. Horaires
+    # --- RÉCUPÉRATION DES DONNÉES POUR L'AFFICHAGE ---
     cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
     horaires = cursor.fetchone()
     if not horaires: horaires = {'debut': '08:00', 'fin': '18:00'}
 
-    # 2. Utilisateurs
     cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
     utilisateurs_list = cursor.fetchall()
 
-    # 3. Matériels
     cursor.execute("SELECT * FROM materiel_stock ORDER BY id_materiel ASC")
     materiels_list = cursor.fetchall()
 
-    # 4. Réservations (avec jointures pour les noms)
     cursor.execute("""
         SELECT r.id_reservation, r.date_reservation, r.date_rendu_prevue, r.statut,
                u.nom, u.prenom, m.nom_modele
@@ -483,7 +505,6 @@ def admin():
     )
 
 
-
 #------------------
 #prets
 #-------------------
@@ -497,13 +518,10 @@ def pret():
 
     user_id = session["id_user"]
 
-    # =========================
-    # ACTIONS
-    # =========================
     if request.method == "POST":
         action = request.form.get("action")
 
-        # 🔵 FAIRE UNE DEMANDE
+        # FAIRE UNE DEMANDE
         if action == "demande":
             id_materiel = request.form["id_materiel"]
             id_destinataire = request.form["id_destinataire"]
@@ -515,7 +533,7 @@ def pret():
 
             db.commit()
 
-        # ACCEPTER UNE DEMANDE
+        # ACCEPTER DEMANDE
         elif action == "accepter":
             id_pret = request.form["id_pret"]
 
@@ -543,7 +561,7 @@ def pret():
 
                 db.commit()
 
-        # 🔴 REFUSER UNE DEMANDE
+        # 🔴 REFUSER  DEMANDE
         elif action == "refuser":
             id_pret = request.form["id_pret"]
 
@@ -570,7 +588,7 @@ def pret():
     """, (user_id,))
     utilisateurs = cursor.fetchall()
 
-    # 📥 demandes reçues (moins de 1 mois)
+    # � demandes reçues 1 mois max
     cursor.execute("""
         SELECT p.*, m.nom_modele, u.nom, u.prenom
         FROM prets p
@@ -582,7 +600,7 @@ def pret():
     """, (user_id,))
     demandes_recues = cursor.fetchall()
 
-    # 📤 demandes envoyées (moins de 1 mois)
+    # 📤 demandes envoyées 1 mois max
     cursor.execute("""
         SELECT p.*, m.nom_modele, u.nom, u.prenom
         FROM prets p
@@ -606,6 +624,7 @@ def pret():
         nom=session["nom"],
         prenom=session["prenom"]
     )
+
 #--------------------
 #Profil
 #--------------------
@@ -619,20 +638,20 @@ def profil(user_id=None):
     cursor = db.cursor(dictionary=True)
     target_id = user_id if user_id is not None else session["id_user"]
 
-    # --- PARTIE MODIFICATION (POST) ---
+    # modification profils email/tel/mdp
     if request.method == "POST":
         email = request.form.get("email")
         tel = request.form.get("telephone")
         nouveau_mdp = request.form.get("nouveau_mdp")
 
-        # Mise à jour des infos de base
+        # Mupdate dans la bdd 
         cursor.execute("""
             UPDATE utilisateurs 
             SET email = %s, telephone = %s 
             WHERE id_utilisateur = %s
         """, (email, tel, target_id))
 
-        # Mise à jour du mot de passe si rempli
+        # update du mdp si remplie 
         if nouveau_mdp and nouveau_mdp.strip() != "":
             import hashlib
             h_mdp = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
@@ -642,7 +661,7 @@ def profil(user_id=None):
         flash("Profil mis à jour avec succès !", "success")
         return redirect(url_for('profil', user_id=user_id))
 
-    # --- PARTIE AFFICHAGE (GET) ---
+    #AFFICHAGE des infos users 
     cursor.execute("SELECT * FROM utilisateurs WHERE id_utilisateur = %s", (target_id,))
     user_info = cursor.fetchone()
 
@@ -675,13 +694,13 @@ def historique_access_page():
     if 'id_user' not in session:
         return redirect(url_for('login'))
 
-    # 1. Récupération de la recherche
+    # Récupération de la recherche
     recherche = request.args.get('recherche', '').strip()
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    # 2. Construction de la requête SQL avec filtres
+    
     # On utilise des LEFT JOIN pour ne pas perdre les "Inconnus" (id_utilisateur IS NULL)
     sql = """
         SELECT h.*, u.nom, u.prenom 
@@ -700,7 +719,7 @@ def historique_access_page():
         search_val = f"%{recherche}%"
         params = [search_val, search_val, search_val, search_val]
 
-    # 3. Tri par les plus récents
+    # 3. Trier par les plus récents
     sql += " ORDER BY h.date_acces DESC, h.heure_acces DESC LIMIT 100"
     
     cursor.execute(sql, params)
@@ -725,7 +744,7 @@ def reservation_materiel_liste(id_mat):
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    # 1. Récupérer les infos du matériel cliqué
+    # Récupérer les infos du matériel cliqué
     cursor.execute("SELECT * FROM materiel_stock WHERE id_materiel = %s", (id_mat,))
     materiel = cursor.fetchone()
 
@@ -733,7 +752,7 @@ def reservation_materiel_liste(id_mat):
         flash("Matériel introuvable", "danger")
         return redirect("/materiels")
 
-    # 2. Récupérer les réservations en cours et futures pour ce matériel
+    # Récupérer les réservations en cours et futures pour ce matériel
     # On fait une jointure pour savoir QUI a réservé
     cursor.execute("""
         SELECT r.*, u.nom, u.prenom 
@@ -755,6 +774,7 @@ def reservation_materiel_liste(id_mat):
         prenom=session["prenom"],
         nom=session["nom"]
     )
+
 #----------------------------
 #######TABLETTE##############
 #----------------------------

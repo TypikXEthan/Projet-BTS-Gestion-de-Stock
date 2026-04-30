@@ -66,7 +66,7 @@
                 <label style="font-size:12px">Fin</label>
                 <input type="time" name="h_fin" value="{{ horaires.fin }}" class="input-modal" style="margin:0">
             </div>
-            <button type="submit" class="btn btn-primary" style="background:#e67e22; border:none">Mettre à jour</button>
+            <button type="submit" class="btn btn-primary" style="background:#e67e22; border:none; color:white; padding:8px 15px; border-radius:4px; cursor:pointer;">Mettre à jour</button>
         </form>
     </div>
 
@@ -82,7 +82,7 @@
                     <option value="disponible">Disponible</option>
                     <option value="maintenance">Maintenance</option>
                 </select>
-                <button type="submit" class="btn btn-primary" style="width:100%">Ajouter au Stock</button>
+                <button type="submit" class="btn btn-primary" style="width:100%; background:#3498db; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Ajouter au Stock</button>
             </form>
         </div>
 
@@ -96,14 +96,13 @@
                     <input type="text" name="utilisateur" placeholder="Login" class="input-modal" required>
                     <input type="password" name="mot_de_passe" placeholder="MDP" class="input-modal" required>
                 </div>
-                <input type="text" name="badge_uid" placeholder="Badge UID" class="input-modal">
+                <input type="text" name="badge_uid" placeholder="Badge UID (Optionnel)" class="input-modal">
                 <input type="email" name="email" placeholder="Email" class="input-modal">
                 <select name="role" class="input-modal">
                     <option value="Élève">Élève</option>
                     <option value="Professeur">Professeur</option>
                 </select>
-                <input type="hidden" name="admin_status" value="0">
-                <button type="submit" class="btn btn-success" style="width:100%">Créer l'utilisateur</button>
+                <button type="submit" class="btn btn-success" style="width:100%; background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Créer l'utilisateur</button>
             </form>
         </div>
     </div>
@@ -153,7 +152,9 @@
                 <tr>
                     <td>{{ u.utilisateur }}</td>
                     <td>{{ u.nom }} {{ u.prenom }}</td>
-                    <td><button class="btn btn-warning" onclick="ouvrirUser('{{u.id_utilisateur}}','{{u.utilisateur}}','{{u.nom}}','{{u.prenom}}','{{u.email}}','{{u.telephone}}','{{u.role}}','{{u.admin}}','{{u.badge_uid}}')">Modifier</button></td>
+                    <td>
+                        <button class="btn btn-warning" onclick="ouvrirUser('{{u.id_utilisateur}}','{{u.utilisateur}}','{{u.nom}}','{{u.prenom}}','{{u.email}}','{{u.telephone}}','{{u.role}}','{{u.admin}}')">Modifier</button>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -184,15 +185,21 @@
         <form method="POST" id="formModifUser">
             <input type="hidden" name="action" id="userAction" value="modifier_utilisateur_complet">
             <input type="hidden" name="id_utilisateur" id="m_u_id">
+            
             <label>Identifiant</label>
             <input type="text" name="utilisateur" id="m_u_login" class="input-modal">
+            
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
-                <input type="text" name="nom" id="m_u_nom" class="input-modal">
-                <input type="text" name="prenom" id="m_u_prenom" class="input-modal">
+                <input type="text" name="nom" id="m_u_nom" class="input-modal" placeholder="Nom">
+                <input type="text" name="prenom" id="m_u_prenom" class="input-modal" placeholder="Prénom">
             </div>
+            
             <input type="email" name="email" id="m_u_email" class="input-modal" placeholder="Email">
-            <input type="text" name="telephone" id="m_u_tel" class="input-modal" placeholder="Tel">
-            <input type="text" name="badge_uid" id="m_u_badge" class="input-modal" placeholder="Badge UID">
+            <input type="text" name="telephone" id="m_u_tel" class="input-modal" placeholder="Téléphone">
+            
+            <label>Badge RFID</label>
+            <input type="text" name="badge_uid" id="m_u_badge" class="input-modal" placeholder="Nouveau badge (Optionnel)">
+            
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
                 <select name="role" id="m_u_role" class="input-modal">
                     <option value="Élève">Élève</option>
@@ -203,9 +210,12 @@
                     <option value="1">Admin</option>
                 </select>
             </div>
+            
+            <label>Mot de passe </label>
             <input type="password" name="nouveau_mdp" placeholder="Nouveau MDP (Optionnel)" class="input-modal">
+            
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px">
-                <button type="submit" class="btn btn-success">Sauvegarder</button>
+                <button type="submit" class="btn btn-success" style="background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Sauvegarder</button>
                 <button type="button" class="btn-supprimer" onclick="confirmerSuppression()">Supprimer</button>
             </div>
             <button type="button" class="btn" onclick="fermerModal('modalUser')" style="width:100%; margin-top:10px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
@@ -233,14 +243,15 @@
                 <option value="{{ u.id_utilisateur }}">{{ u.nom }} {{ u.prenom }}</option>
                 {% endfor %}
             </select>
-            <button type="submit" class="btn btn-success" style="width:100%; border:none; padding:10px; border-radius:4px; cursor:pointer;">Enregistrer</button>
+            <button type="submit" class="btn btn-success" style="width:100%; background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Enregistrer</button>
             <button type="button" class="btn" onclick="fermerModal('modalMat')" style="width:100%; margin-top:5px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
         </form>
     </div>
 </div>
 
 <script>
-    function ouvrirUser(id, log, nom, pre, mail, tel, role, adm, badge) {
+    // JS UTILISATEUR : On a supprimé l'argument 'badge'
+    function ouvrirUser(id, log, nom, pre, mail, tel, role, adm) {
         document.getElementById('m_u_id').value = id;
         document.getElementById('m_u_login').value = log;
         document.getElementById('m_u_nom').value = nom;
@@ -249,7 +260,10 @@
         document.getElementById('m_u_tel').value = tel;
         document.getElementById('m_u_role').value = role;
         document.getElementById('m_u_admin').value = adm;
-        document.getElementById('m_u_badge').value = badge;
+        
+        // On vide le badge pour qu'il soit "Optionnel" et caché
+        document.getElementById('m_u_badge').value = "";
+        
         document.getElementById('userAction').value = "modifier_utilisateur_complet";
         document.getElementById('modalUser').classList.add('active');
     }
@@ -261,6 +275,7 @@
         }
     }
 
+    // JS MATÉRIEL
     function ouvrirMat(id, nom, rfid, etat, uid) {
         document.getElementById('m_m_id').value = id;
         document.getElementById('m_m_nom').value = nom;
@@ -271,7 +286,11 @@
     }
 
     function fermerModal(id) { document.getElementById(id).classList.remove('active'); }
-    window.onclick = function(event) { if (event.target.className === 'modal active') event.target.classList.remove('active'); }
+    
+    // Fermeture au clic extérieur
+    window.onclick = function(event) { 
+        if (event.target.className === 'modal active') event.target.classList.remove('active'); 
+    }
 </script>
 </body>
 </html>

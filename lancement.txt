@@ -3,3 +3,4 @@ python3 -m venv venv
 source venv/bin/activate
 pip install mysql.connector
 pip install flask
+pip install python-dotenv
