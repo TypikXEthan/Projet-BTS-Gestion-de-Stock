@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Prêt de matériel</title>
+<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<!-- ================= SIDEBAR ================= -->
+<div class="barre-laterale">
+    <h2>RFID</h2>
+
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/pret" class="actif">Prêts</a>
+    <a href="/reservations">Réservations</a>
+     <a href="/profil">Mon Profil</a>
+
+{% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<!-- ================= CONTENU ================= -->
+<div class="admin-container">
+<div class="contenu-tableau-de-bord">
+
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1>Tableau de bord</h1>
+        </div>
+
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+<!-- ================= DEMANDE ================= -->
+<div class="admin-card">
+<h2>Faire une demande de prêt</h2>
+
+<form method="POST">
+<input type="hidden" name="action" value="demande">
+
+<label>Mon matériel :</label>
+<select name="id_materiel" required>
+<option value="">-- Choisir --</option>
+{% for m in mes_materiels %}
+<option value="{{ m.id_materiel }}">{{ m.nom_modele }}</option>
+{% endfor %}
+</select>
+
+<label>Destinataire :</label>
+<select name="id_destinataire" required>
+<option value="">-- Choisir --</option>
+{% for u in utilisateurs %}
+<option value="{{ u.id_utilisateur }}">
+{{ u.prenom }} {{ u.nom }}
+</option>
+{% endfor %}
+</select>
+
+<br><br>
+<button class="btn btn-success">Envoyer la demande</button>
+
+</form>
+</div>
+
+<!-- ================= DEMANDES RECUES ================= -->
+<div class="admin-card">
+<h2>Demandes reçues</h2>
+
+<table>
+<tr>
+<th>Matériel</th>
+<th>De</th>
+<th>Action</th>
+</tr>
+
+{% for d in demandes_recues %}
+<tr>
+<td>{{ d.nom_modele }}</td>
+<td>{{ d.prenom }} {{ d.nom }}</td>
+
+<td>
+
+<form method="POST" style="display:inline;">
+<input type="hidden" name="id_pret" value="{{ d.id_pret }}">
+<button name="action" value="accepter" class="btn btn-success">
+Accepter
+</button>
+</form>
+
+<form method="POST" style="display:inline;">
+<input type="hidden" name="id_pret" value="{{ d.id_pret }}">
+<button name="action" value="refuser" class="btn btn-danger">
+Refuser
+</button>
+</form>
+
+</td>
+</tr>
+{% endfor %}
+
+{% if demandes_recues|length == 0 %}
+<tr><td colspan="3">Aucune demande</td></tr>
+{% endif %}
+
+</table>
+</div>
+
+<!-- ================= DEMANDES ENVOYEES ================= -->
+<div class="admin-card">
+<h2>Mes demandes envoyées</h2>
+
+<table>
+<tr>
+<th>Matériel</th>
+<th>Pour</th>
+<th>Statut</th>
+</tr>
+
+{% for d in demandes_envoyees %}
+<tr>
+<td>{{ d.nom_modele }}</td>
+<td>{{ d.prenom }} {{ d.nom }}</td>
+
+<td>
+{% if d.statut == "en_attente" %}
+<span class="badge-warning">En attente</span>
+{% elif d.statut == "accepte" %}
+<span class="badge-stock">Accepté</span>
+{% elif d.statut == "refuse" %}
+<span class="badge-out">Refusé</span>
+{% endif %}
+</td>
+
+</tr>
+{% endfor %}
+
+</table>
+</div>
+
+</div>
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    // On écoute le clic sur le bouton
+    userBtn.addEventListener('click', function(e) {
+        e.stopPropagation(); // Empêche la fermeture immédiate via l'événement window
+        userDropdown.classList.toggle('show');
+    });
+
+    // Ferme le menu si on clique n'importe où ailleurs sur la page
+    window.addEventListener('click', function() {
+        if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
+</body>
+</html>

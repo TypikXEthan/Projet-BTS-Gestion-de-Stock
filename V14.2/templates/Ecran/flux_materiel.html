@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flux Matériel - Live RFID</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ecran.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .modal-overlay { background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); }
+        .glass-modal { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 2rem; }
+        .scroll-area::-webkit-scrollbar { width: 5px; }
+        .scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        input[type="checkbox"] { cursor: pointer; }
+    </style>
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+</head>
+<body class="overflow-hidden bg-black text-white font-sans">
+
+    <header class="header-flux flex justify-between items-center p-6 bg-black/20 border-b border-white/10">
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-blue-500">RFID <span class="text-white">SCANNER</span></h1>
+        <div class="text-[10px] opacity-50 uppercase tracking-widest font-bold">Gestion des mouvements de stock</div>
+    </header>
+
+    <main class="flux-container flex gap-6 p-6 h-[72vh]">
+        <div class="glass-column flex-1 flex flex-col bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
+            <div class="p-4 font-black text-xl flex justify-between border-b border-white/10 text-green-400">
+                <span>RETOUR STOCK</span>
+                <span id="count-entree" class="bg-white/10 px-3 py-1 rounded-full text-sm text-white">0</span>
+            </div>
+            <div id="liste-entree" class="scroll-area flex-1 overflow-y-auto p-4"></div>
+        </div>
+
+        <div class="glass-column flex-1 flex flex-col bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
+            <div class="p-4 font-black text-xl flex justify-between border-b border-white/10 text-red-400">
+                <span>SORTIE MATÉRIEL</span>
+                <span id="count-sortie" class="bg-white/10 px-3 py-1 rounded-full text-sm text-white">0</span>
+            </div>
+            <div id="liste-sortie" class="scroll-area flex-1 overflow-y-auto p-4"></div>
+        </div>
+    </main>
+
+    <footer class="actions-bar fixed bottom-0 w-full p-6 flex justify-center gap-4 bg-black/30 backdrop-blur-md border-t border-white/5">
+        <a href="http://172.29.241.141:5000/" class="bg-blue-600 text-white px-8 py-4 rounded-xl font-bold uppercase text-xs hover:bg-blue-500 transition-all shadow-lg flex items-center">IHM CONFIG</a>
+        <button onclick="openModal('modal-rectif')" class="bg-white/10 text-white px-8 py-4 rounded-xl font-bold uppercase text-xs border border-white/10 hover:bg-white/20">RECTIFICATIONS</button>
+        <button onclick="ouvrirPopupValidation()" class="bg-red-600 text-white px-10 py-4 rounded-xl font-black uppercase text-sm shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all">
+            TERMINER LA SESSION
+        </button>
+    </footer>
+
+    <div id="modal-rectif" class="fixed inset-0 modal-overlay flex items-center justify-center hidden z-50 p-4">
+        <div class="glass-modal w-full max-w-2xl p-8 relative flex flex-col max-h-[85vh]">
+            <button onclick="closeModal('modal-rectif')" class="absolute top-6 right-6 text-2xl opacity-50 hover:opacity-100">✕</button>
+            <h2 class="text-3xl font-black mb-6 uppercase">Gérer les scans</h2>
+            <div id="edit-list-container" class="scroll-area flex-1 overflow-y-auto space-y-3 pr-2 mb-6"></div>
+            <button onclick="closeModal('modal-rectif')" class="w-full p-4 bg-white text-black font-bold rounded-xl uppercase">Fermer</button>
+        </div>
+    </div>
+
+    <div id="modal-validation" class="fixed inset-0 modal-overlay flex items-center justify-center hidden z-50 p-4">
+        <div class="glass-modal w-full max-w-md p-8 relative">
+            <button onclick="closeModal('modal-validation')" class="absolute top-6 right-6 text-2xl opacity-50 hover:opacity-100">✕</button>
+            <h2 class="text-2xl font-black mb-4 uppercase text-center text-blue-500">Clôturer la Session</h2>
+            <div id="recap-liste" class="scroll-area max-h-40 overflow-y-auto mb-6 space-y-2 bg-black/20 p-3 rounded-xl border border-white/5"></div>
+            <div class="space-y-4 mb-6">
+                <input type="text" id="final-user" placeholder="Utilisateur" class="w-full bg-white/10 border border-white/20 p-3 rounded-xl text-white outline-none focus:border-red-500">
+                <input type="password" id="final-password" placeholder="Mot de passe" class="w-full bg-white/10 border border-white/20 p-3 rounded-xl text-white outline-none focus:border-red-500">
+            </div>
+            <button onclick="envoyerValidationFinale()" class="w-full p-4 bg-red-600 rounded-xl font-bold uppercase shadow-lg hover:bg-red-500 transition-all">Valider en Base de Données</button>
+        </div>
+    </div>
+
+    <div id="modal-question" class="fixed inset-0 modal-overlay flex items-center justify-center hidden z-[60] p-4">
+        <div class="glass-modal w-full max-w-sm p-8 text-center">
+            <h2 class="text-xl font-black mb-6 uppercase">Session validée !</h2>
+            <p class="text-sm opacity-70 mb-8">Y a-t-il encore quelqu'un dans le local ?</p>
+            <div class="flex gap-4">
+                <button onclick="reponseQuestion(true)" class="flex-1 p-4 bg-green-600 rounded-xl font-bold uppercase hover:bg-green-500 transition-all text-white">OUI</button>
+                <button onclick="reponseQuestion(false)" class="flex-1 p-4 bg-white/10 border border-white/20 rounded-xl font-bold uppercase hover:bg-white/20 transition-all text-white">NON</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const socket = io();
+    let inactivityTimer;
+
+    function resetInactivityTimer() {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => { window.location.href = "/tablette"; }, 600000);
+    }
+    resetInactivityTimer();
+
+    socket.on('mouvement_stock', (data) => {
+        resetInactivityTimer();
+        const old = document.getElementById(`item-${data.id}`);
+        if (old) old.remove();
+        
+        const isDispo = (data.etat === 'Disponible');
+        const container = document.getElementById(isDispo ? 'liste-entree' : 'liste-sortie');
+        const card = document.createElement('div');
+        
+        card.id = `item-${data.id}`;
+        card.className = `item-scan mb-4 p-4 rounded-2xl flex flex-col border-l-8 transition-all ${isDispo ? 'bg-green-500/10 border-green-500' : 'bg-red-500/10 border-red-500'}`;
+        card.setAttribute('data-tag', data.id);
+        card.setAttribute('data-nom', data.nom);
+        card.setAttribute('data-etat', data.etat);
+
+        // --- AJOUT DU MESSAGE D'ALERTE ---
+        let alertHTML = data.message ? `<div class="mt-2 py-1 px-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-[11px] text-orange-400 font-bold">⚠️ ${data.message}</div>` : '';
+
+        card.innerHTML = `
+            <div class="flex justify-between items-center w-full">
+                <div>
+                    <h3 class="font-bold text-lg text-white">${data.nom}</h3>
+                    <p class="text-[10px] text-white/40 font-mono uppercase">${data.id}</p>
+                </div>
+            </div>
+            ${alertHTML}
+        `;
+        
+        container.prepend(card);
+        updateCounts();
+    });
+
+    function updateCounts() {
+        document.getElementById('count-entree').innerText = document.getElementById('liste-entree').children.length;
+        document.getElementById('count-sortie').innerText = document.getElementById('liste-sortie').children.length;
+    }
+
+    function ouvrirPopupValidation() {
+        const recap = document.getElementById('recap-liste');
+        recap.innerHTML = '';
+        const scans = document.querySelectorAll('.item-scan');
+        if (scans.length === 0) {
+            recap.innerHTML = '<p class="text-center opacity-40 text-xs py-10 italic">Aucun scan.</p>';
+        } else {
+            scans.forEach(item => {
+                const tag = item.getAttribute('data-tag');
+                const nom = item.getAttribute('data-nom');
+                const etat = item.getAttribute('data-etat');
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5";
+                div.innerHTML = `<div class="flex items-center gap-3"><input type="checkbox" checked class="check-final w-5 h-5 accent-red-500" value="${tag}"><span class="text-sm font-bold">${nom}</span></div><span class="text-[9px] font-black uppercase ${etat === 'Disponible' ? 'text-green-400' : 'text-red-400'}">${etat}</span>`;
+                recap.appendChild(div);
+            });
+        }
+        openModal('modal-validation');
+    }
+
+    function envoyerValidationFinale() {
+        const user = document.getElementById('final-user').value;
+        const pass = document.getElementById('final-password').value;
+        const tags = Array.from(document.querySelectorAll('.check-final:checked')).map(cb => cb.value);
+
+        fetch('/valider_session_finale', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ user: user, password: pass, tags: tags })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                tags.forEach(tag => {
+                    const el = document.getElementById(`item-${tag}`);
+                    if (el) el.remove();
+                });
+                updateCounts();
+                closeModal('modal-validation');
+                openModal('modal-question');
+            } else {
+                alert("❌ Erreur : " + data.message);
+            }
+        });
+    }
+
+    function reponseQuestion(encoreQuelquun) {
+        if (encoreQuelquun) {
+            closeModal('modal-question');
+            document.getElementById('final-user').value = "";
+            document.getElementById('final-password').value = "";
+        } else {
+            window.location.href = "/tablette"; 
+        }
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+</script>
+</body>
+</html>

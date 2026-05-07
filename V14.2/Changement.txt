@@ -1,0 +1,4 @@
+Changement système reservation emepecher que quand un materiel est sortie on puisse le reserver le jour meme genre mettre un delais 
+afficher les ids du materiel sur les reservation + peut etre l'id des tags et quand on veut reserver 
+
+Reparer le flux_materiel qui ne marche pas avec le VPS 

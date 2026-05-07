@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Administration - Système RFID</title>
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; }
+        .modal.active { display: flex !important; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 550px; max-height: 90vh; overflow-y: auto; color: #333; }
+        .input-modal { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 20px; border-bottom: 1px solid #ddd; }
+        .dropdown-menu { display: none; position: absolute; right: 20px; top: 60px; background: white; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; }
+        .dropdown-menu.show { display: block; }
+        .horaires-panel { background: #f8f9fa; border-left: 5px solid #e67e22; padding: 15px; margin-top: 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .btn-supprimer { background-color: #dc3545; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; }
+        .btn-supprimer:hover { background-color: #a71d2a; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        .badge-statut { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; background: #e9ecef; color: #495057; }
+
+        /* Nouveaux styles pour l'oeil du mot de passe */
+        .pwd-container { position: relative; width: 100%; }
+        .toggle-pwd { position: absolute; right: 10px; top: 40%; transform: translateY(-50%); cursor: pointer; user-select: none; z-index: 10; color: #666; }
+        .input-modal-pwd { padding-right: 35px !important; }
+    </style>
+</head>
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/pret">Prêts</a>
+    <a href="/reservations">Réservations</a>
+    <a href="/profil">Mon Profil</a>
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="actif">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+    <header class="top-bar">
+        <h1>Administration</h1>
+        <div style="cursor:pointer" onclick="document.getElementById('userDropdown').classList.toggle('show')">
+            <strong>{{ prenom }} {{ nom }}</strong> ▼
+        </div>
+        <div class="dropdown-menu" id="userDropdown">
+            <a href="/profil" style="display:block; padding:10px; text-decoration:none; color:#333">Mon Profil</a>
+            <a href="/logout" style="display:block; padding:10px; text-decoration:none; color:red">Déconnexion</a>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div style="padding: 15px; margin: 10px 0; border-radius: 4px; background-color: {% if category == 'danger' %}#f8d7da{% elif category == 'success' %}#d4edda{% else %}#fff3cd{% endif %}; color: {% if category == 'danger' %}#721c24{% elif category == 'success' %}#155724{% else %}#856404{% endif %};">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="horaires-panel">
+        <div>
+            <h3 style="margin:0">🕒 Horaires d'accès</h3>
+            <p style="margin:5px 0 0 0">Actuel : <b>{{ horaires.debut }}</b> à <b>{{ horaires.fin }}</b></p>
+        </div>
+        <form method="POST" style="display:flex; gap:10px; align-items: flex-end;">
+            <input type="hidden" name="action" value="modifier_horaires_globaux">
+            <div>
+                <label style="font-size:12px">Début</label>
+                <input type="time" name="h_debut" value="{{ horaires.debut }}" class="input-modal" style="margin:0">
+            </div>
+            <div>
+                <label style="font-size:12px">Fin</label>
+                <input type="time" name="h_fin" value="{{ horaires.fin }}" class="input-modal" style="margin:0">
+            </div>
+            <button type="submit" class="btn btn-primary" style="background:#e67e22; border:none; color:white; padding:8px 15px; border-radius:4px; cursor:pointer;">Mettre à jour</button>
+        </form>
+    </div>
+
+    <div style="display:flex; gap:20px; margin-top:20px;">
+        <div class="admin-card" style="flex:1">
+            <h3>Nouveau Matériel</h3>
+            <form method="POST">
+                <input type="hidden" name="action" value="ajouter_materiel">
+                <input type="text" name="id_inventaire" placeholder="ID Inventaire" class="input-modal" required>
+                <input type="text" name="nom_modele" placeholder="Nom / Modèle" class="input-modal" required>
+                <input type="text" name="rfid_tag" placeholder="Tag RFID" class="input-modal" required>
+                <select name="etat" class="input-modal">
+                    <option value="disponible">Disponible</option>
+                    <option value="maintenance">Maintenance</option>
+                </select>
+                <button type="submit" class="btn btn-primary" style="width:100%; background:#3498db; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Ajouter au Stock</button>
+            </form>
+        </div>
+
+        <div class="admin-card" style="flex:1">
+            <h3>Nouveau Membre</h3>
+            <form method="POST">
+                <input type="hidden" name="action" value="creer_utilisateur">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px">
+                    <input type="text" name="nom" placeholder="Nom" class="input-modal" required>
+                    <input type="text" name="prenom" placeholder="Prénom" class="input-modal" required>
+                    <input type="text" name="utilisateur" placeholder="Login" class="input-modal" required>
+                    
+                    <div class="pwd-container">
+                        <input type="password" name="mot_de_passe" id="creer_mdp" placeholder="MDP (10 car. + 1 spéc.)" 
+                               class="input-modal input-modal-pwd" required 
+                               pattern="^(?=.*[!@#$%^&*(),.?\&quot;:{}|<>]).{10,}$"
+                               title="Le mot de passe doit faire au moins 10 caractères et contenir au moins un caractère spécial.">
+                        <span class="toggle-pwd" onclick="toggleMdp('creer_mdp')">👁️</span>
+                    </div>
+                </div>
+                <input type="text" name="badge_uid" placeholder="Badge UID (Optionnel)" class="input-modal">
+                <input type="email" name="email" placeholder="Email" class="input-modal">
+                <select name="role" class="input-modal">
+                    <option value="Élève">Élève</option>
+                    <option value="Professeur">Professeur</option>
+                </select>
+                <button type="submit" class="btn btn-success" style="width:100%; background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Créer l'utilisateur</button>
+            </form>
+        </div>
+    </div>
+
+<div class="admin-card" style="margin-top:20px;">
+    <h2>Réservations en cours ({{ reservations|length }})</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Matériel</th>
+                <th>Utilisateur</th>
+                <th>Début</th>
+                <th>Fin prévue</th>
+                <th>Statut</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for r in reservations %}
+            <tr>
+                <td><b>{{ r.nom_modele }}</b></td>
+                <td>{{ r.prenom }} {{ r.nom }}</td>
+
+                <!-- DATE DE RESERVATION -->
+                <td>{{ r.date_reservation }}</td>
+
+                <!-- ✅ CORRECTION ICI -->
+                <td>{{ r.date_limite }}</td>
+
+                <td>
+                    <span class="badge-statut">{{ r.statut }}</span>
+                </td>
+
+                <td>
+                    <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');">
+                        <input type="hidden" name="action" value="supprimer_reservation">
+                        <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+                        <button type="submit" class="btn-supprimer">
+                            Annuler
+                        </button>
+                    </form>
+                </td>
+            </tr>
+
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align:center; opacity:0.5; padding:20px;">
+                    Aucune réservation enregistrée.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+    <div class="admin-card" style="margin-top:20px;">
+        <h2>Utilisateurs ({{ utilisateurs|length }})</h2>
+        <table>
+            <thead><tr><th>Login</th><th>Nom / Prénom</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for u in utilisateurs %}
+                <tr>
+                    <td>{{ u.utilisateur }}</td>
+                    <td>{{ u.nom }} {{ u.prenom }}</td>
+                    <td>
+                        <button class="btn btn-warning" onclick="ouvrirUser('{{u.id_utilisateur}}','{{u.utilisateur}}','{{u.nom}}','{{u.prenom}}','{{u.email}}','{{u.telephone}}','{{u.role}}','{{u.admin}}')">Modifier</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="admin-card" style="margin-top:20px;">
+        <h2>Matériels</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Modèle</th><th>État</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for m in materiels %}
+                <tr>
+                    <td>{{ m.id_materiel }}</td>
+                    <td>{{ m.nom_modele }}</td>
+                    <td>{{ m.etat }}</td>
+                    <td><button class="btn btn-warning" onclick="ouvrirMat('{{m.id_materiel}}','{{m.nom_modele}}','{{m.rfid_tag_epc}}','{{m.etat}}','{{m.id_utilisateur_actuel or ''}}')">Modifier</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="modalUser" class="modal">
+    <div class="modal-content">
+        <h3>Modifier Utilisateur</h3>
+        <form method="POST" id="formModifUser">
+            <input type="hidden" name="action" id="userAction" value="modifier_utilisateur_complet">
+            <input type="hidden" name="id_utilisateur" id="m_u_id">
+            
+            <label>Identifiant</label>
+            <input type="text" name="utilisateur" id="m_u_login" class="input-modal">
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
+                <input type="text" name="nom" id="m_u_nom" class="input-modal" placeholder="Nom">
+                <input type="text" name="prenom" id="m_u_prenom" class="input-modal" placeholder="Prénom">
+            </div>
+            
+            <input type="email" name="email" id="m_u_email" class="input-modal" placeholder="Email">
+            <input type="text" name="telephone" id="m_u_tel" class="input-modal" placeholder="Téléphone">
+            
+            <label>Badge RFID</label>
+            <input type="text" name="badge_uid" id="m_u_badge" class="input-modal" placeholder="Nouveau badge (Optionnel)">
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
+                <select name="role" id="m_u_role" class="input-modal">
+                    <option value="Élève">Élève</option>
+                    <option value="Professeur">Professeur</option>
+                </select>
+                <select name="admin_status" id="m_u_admin" class="input-modal">
+                    <option value="0">Utilisateur</option>
+                    <option value="1">Admin</option>
+                </select>
+            </div>
+            
+            <label>Mot de passe (Optionnel)</label>
+            <div class="pwd-container">
+                <input type="password" name="nouveau_mdp" id="modif_mdp" placeholder="10 car. + 1 spécial pour changer" 
+                       class="input-modal input-modal-pwd"
+                       pattern="^(?=.*[!@#$%^&*(),.?\&quot;:{}|<>]).{10,}$"
+                       title="Si vous remplissez ce champ, il doit faire au moins 10 caractères et contenir un caractère spécial.">
+                <span class="toggle-pwd" onclick="toggleMdp('modif_mdp')">👁️</span>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px">
+                <button type="submit" class="btn btn-success" style="background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Sauvegarder</button>
+                <button type="button" class="btn-supprimer" onclick="confirmerSuppression()">Supprimer</button>
+            </div>
+            <button type="button" class="btn" onclick="fermerModal('modalUser')" style="width:100%; margin-top:10px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
+        </form>
+    </div>
+</div>
+
+<div id="modalMat" class="modal">
+    <div class="modal-content">
+        <h3>Modifier Matériel</h3>
+        <form method="POST">
+            <input type="hidden" name="action" value="modifier_materiel_complet">
+            <input type="hidden" name="id_materiel" id="m_m_id">
+            <input type="text" name="nom_modele" id="m_m_nom" class="input-modal">
+            <input type="text" name="rfid_tag_epc" id="m_m_rfid" class="input-modal">
+            <select name="nouveau_statut" id="m_m_etat" class="input-modal">
+                <option value="disponible">Disponible</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="sortie">Sortie</option>
+            </select>
+            <label>Attribuer à :</label>
+            <select name="id_utilisateur_actuel" id="m_m_user" class="input-modal">
+                <option value="">-- En Stock --</option>
+                {% for u in utilisateurs %}
+                <option value="{{ u.id_utilisateur }}">{{ u.nom }} {{ u.prenom }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-success" style="width:100%; background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Enregistrer</button>
+            <button type="button" class="btn" onclick="fermerModal('modalMat')" style="width:100%; margin-top:5px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Fonction pour afficher/masquer le mot de passe
+    function toggleMdp(idInput) {
+        const input = document.getElementById(idInput);
+        const icon = input.nextElementSibling;
+        if (input.type === "password") {
+            input.type = "text";
+            icon.textContent = "🙈";
+        } else {
+            input.type = "password";
+            icon.textContent = "👁️";
+        }
+    }
+
+    function ouvrirUser(id, log, nom, pre, mail, tel, role, adm) {
+        document.getElementById('m_u_id').value = id;
+        document.getElementById('m_u_login').value = log;
+        document.getElementById('m_u_nom').value = nom;
+        document.getElementById('m_u_prenom').value = pre;
+        document.getElementById('m_u_email').value = mail;
+        document.getElementById('m_u_tel').value = tel;
+        document.getElementById('m_u_role').value = role;
+        document.getElementById('m_u_admin').value = adm;
+        document.getElementById('m_u_badge').value = "";
+        document.getElementById('userAction').value = "modifier_utilisateur_complet";
+        document.getElementById('modalUser').classList.add('active');
+    }
+
+    function confirmerSuppression() {
+        if(confirm("Supprimer définitivement cet utilisateur ?")) {
+            document.getElementById('userAction').value = "supprimer_utilisateur";
+            document.getElementById('formModifUser').submit();
+        }
+    }
+
+    function ouvrirMat(id, nom, rfid, etat, uid) {
+        document.getElementById('m_m_id').value = id;
+        document.getElementById('m_m_nom').value = nom;
+        document.getElementById('m_m_rfid').value = rfid;
+        document.getElementById('m_m_etat').value = etat;
+        document.getElementById('m_m_user').value = uid;
+        document.getElementById('modalMat').classList.add('active');
+    }
+
+    function fermerModal(id) { document.getElementById(id).classList.remove('active'); }
+    
+    window.onclick = function(event) { 
+        if (event.target.className === 'modal active') event.target.classList.remove('active'); 
+    }
+</script>
+</body>
+</html>
