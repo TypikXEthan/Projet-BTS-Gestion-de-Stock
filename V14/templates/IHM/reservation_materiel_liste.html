@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Planning - {{ materiel.nom_modele }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels" class="actif">Matériels</a>
+    <a href="/historique">Historique</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/pret">Prêts</a>
+    <a href="/reservations">Réservations</a>
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+    <a href="/materiels" style="text-decoration:none; color:var(--gris-moyen);">⬅ Retour</a>
+
+    <header class="page-header-detail">
+        <h1>{{ materiel.nom_modele }} <small>(#{{ materiel.id_materiel }})</small></h1>
+        <div class="user-info">
+            <span>{{ prenom }} {{ nom }}</span>
+        </div>
+    </header>
+
+    <div class="grid-details">
+        <div class="conteneur-tableau">
+            <h2 class="titre-section-bleu">Disponibilités</h2>
+            <div id="calendar-inline"></div>
+        </div>
+
+        <div class="conteneur-tableau">
+            <h2 class="titre-section-vert">Réservations en cours</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>Période</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reservations %}
+                    <tr>
+                        <td><strong>{{ r.prenom }} {{ r.nom }}</strong></td>
+                        <td>{{ r.date_reservation.strftime('%d/%m') }} au {{ r.date_limite.strftime('%d/%m') }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="2" style="text-align:center; padding:30px;">Aucune réservation</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+    const datesOccupees = [
+        {% for r in reservations %}
+        { from: "{{ r.date_reservation }}", to: "{{ r.date_limite }}" },
+        {% endfor %}
+    ];
+
+    flatpickr("#calendar-inline", {
+        inline: true,
+        dateFormat: "Y-m-d",
+        disable: [
+            { from: "1900-01-01", to: new Date().fp_incr(-1) }, // Désactive le passé
+            ...datesOccupees // Désactive les réservations
+        ],
+        locale: { firstDayOfWeek: 1 },
+        onDayCreate: function(dObj, dStr, fp, dayElem) {
+            const dateCase = dayElem.dateObj.setHours(0,0,0,0);
+            const aujourdhui = new Date().setHours(0,0,0,0);
+            
+            if (dateCase < aujourdhui) {
+                dayElem.classList.add("past"); // Style GRIS
+            } else if (dayElem.classList.contains("flatpickr-disabled")) {
+                dayElem.classList.add("booked"); // Style ROUGE
+            }
+        }
+    });
+</script>
+</body>
+</html>
