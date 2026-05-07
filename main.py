@@ -917,12 +917,67 @@ def valider_session_finale():
     data = request.json
     user_login = data.get('user')
     password = data.get('password')
-    tags_selectionnes = data.get('tags', [])
+    tags_selectionnes = data.get('tags', []) # Liste des tags cochés dans la popup
 
-    # --- MODIFICATION ICI : Autoriser la fermeture si rien n'est scanné ---
+    # 1. Si aucun tag n'est sélectionné, on ferme juste la session
     if not tags_selectionnes:
-        session_scan = {} # On vide la session temporaire
+        session_scan = {} 
         return jsonify({"status": "ok", "message": "Session fermée sans mouvement"})
+
+    # 2. Vérification de l'identité
+    mdp_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id_utilisateur FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
+        valideur = cursor.fetchone()
+        
+        if not valideur:
+            return jsonify({"status": "error", "message": "Identifiants incorrects"}), 403
+
+        id_u = valideur['id_utilisateur']
+
+        # 3. Traitement uniquement des matériels cochés
+        for tag in tags_selectionnes:
+            if tag in session_scan:
+                infos = session_scan[tag]
+                
+                # Si l'objet rentre (Disponible), l'utilisateur actuel devient NULL
+                nouvel_utilisateur = None if infos['etat'] == "Disponible" else id_u
+
+                # Mise à jour du stock
+                query = """
+                    UPDATE materiel_stock 
+                    SET etat = %s, id_utilisateur_actuel = %s 
+                    WHERE rfid_tag_epc = %s
+                """
+                cursor.execute(query, (infos['etat'], nouvel_utilisateur, tag))
+
+                # Enregistrement du mouvement (Historique)
+                cursor.execute("""
+                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
+                    VALUES (%s, %s, %s, NOW())
+                """, (infos['id'], id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
+                
+                # --- IMPORTANT : On retire l'objet de la session globale car il est traité ---
+                del session_scan[tag]
+
+        db.commit()
+        
+        # On ne fait PLUS session_scan = {} ici ! 
+        # On a supprimé seulement les tags validés. 
+        # Si d'autres tags étaient affichés mais non cochés, ils restent dans session_scan.
+        
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        if db: db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        if cursor: cursor.close()
+        if db: db.close()
+
     # ---------------------------------------------------------------------
 
     # Si il y a des tags, on vérifie l'identité normalement
