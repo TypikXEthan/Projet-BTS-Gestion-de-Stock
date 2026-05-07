@@ -1,1 +1,1 @@
-Ajout demande si y a un autre prof dans le local et si oui retire tout ce que le prof a mis du tableau et l'update dans la bdd 
+Système reservation refait + message pour prévenir materiel reserver le XX/XX dans flux_materiel

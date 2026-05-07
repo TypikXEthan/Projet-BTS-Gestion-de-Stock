@@ -96,15 +96,30 @@
         resetInactivityTimer();
         const old = document.getElementById(`item-${data.id}`);
         if (old) old.remove();
+        
         const isDispo = (data.etat === 'Disponible');
         const container = document.getElementById(isDispo ? 'liste-entree' : 'liste-sortie');
         const card = document.createElement('div');
+        
         card.id = `item-${data.id}`;
-        card.className = `item-scan mb-4 p-4 rounded-2xl flex items-center justify-between border-l-8 transition-all ${isDispo ? 'bg-green-500/10 border-green-500' : 'bg-red-500/10 border-red-500'}`;
+        card.className = `item-scan mb-4 p-4 rounded-2xl flex flex-col border-l-8 transition-all ${isDispo ? 'bg-green-500/10 border-green-500' : 'bg-red-500/10 border-red-500'}`;
         card.setAttribute('data-tag', data.id);
         card.setAttribute('data-nom', data.nom);
         card.setAttribute('data-etat', data.etat);
-        card.innerHTML = `<div><h3 class="font-bold text-lg text-white">${data.nom}</h3><p class="text-[10px] text-white/40 font-mono uppercase">${data.id}</p></div>`;
+
+        // --- AJOUT DU MESSAGE D'ALERTE ---
+        let alertHTML = data.message ? `<div class="mt-2 py-1 px-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-[11px] text-orange-400 font-bold">⚠️ ${data.message}</div>` : '';
+
+        card.innerHTML = `
+            <div class="flex justify-between items-center w-full">
+                <div>
+                    <h3 class="font-bold text-lg text-white">${data.nom}</h3>
+                    <p class="text-[10px] text-white/40 font-mono uppercase">${data.id}</p>
+                </div>
+            </div>
+            ${alertHTML}
+        `;
+        
         container.prepend(card);
         updateCounts();
     });
@@ -134,7 +149,6 @@
         openModal('modal-validation');
     }
 
-    // --- ENVOI BDD ET OUVERTURE QUESTION ---
     function envoyerValidationFinale() {
         const user = document.getElementById('final-user').value;
         const pass = document.getElementById('final-password').value;
@@ -148,14 +162,11 @@
         .then(res => res.json())
         .then(data => {
             if(data.status === 'ok') {
-                // Succès : On retire les éléments validés de l'écran principal
                 tags.forEach(tag => {
                     const el = document.getElementById(`item-${tag}`);
                     if (el) el.remove();
                 });
                 updateCounts();
-                
-                // On ferme la modale de login et on ouvre la question OUI/NON
                 closeModal('modal-validation');
                 openModal('modal-question');
             } else {
@@ -164,23 +175,18 @@
         });
     }
 
-    // --- GESTION DE LA RÉPONSE OUI/NON ---
     function reponseQuestion(encoreQuelquun) {
         if (encoreQuelquun) {
-            // OUI : On reste ici, on ferme juste la popup
             closeModal('modal-question');
-            // On vide les champs pour le prochain
             document.getElementById('final-user').value = "";
             document.getElementById('final-password').value = "";
         } else {
-            // NON : Retour à l'accueil
             window.location.href = "/tablette"; 
         }
     }
 
     function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    // (Les fonctions de rectif restent identiques à ta version précédente)
 </script>
 </body>
 </html>

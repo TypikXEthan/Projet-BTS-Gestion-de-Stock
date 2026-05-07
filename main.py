@@ -281,55 +281,71 @@ def utilisateurs():
 # -------------------------------
 @app.route("/reservations", methods=["GET", "POST"])
 def reservations():
+    # 1. Vérification de la session (Ethan, on utilise 'id_user' comme vu dans tes logs)
     if "id_user" not in session:
-        return redirect("/")
+        return redirect(url_for("login"))
 
-    db = get_db()
+    # 2. Connexion via ta fonction existante
+    db = get_db() 
     cursor = db.cursor(dictionary=True)
-    user_id = session["id_user"]
+    
+    id_u = session["id_user"]
+    aujourdhui = date.today()
 
+    # 3. Gestion des actions (POST)
     if request.method == "POST":
         action = request.form.get("action")
 
         if action == "reserver":
-            id_mat = request.form.get("id_materiel")
-            d_debut = request.form.get("date_reservation")
+            id_m = request.form.get("id_materiel")
+            d_res = request.form.get("date_reservation")
             d_fin = request.form.get("date_fin")
 
-            # Verifie si il n'y a pas deja de reserv pour eviter les conflits 
+            # Vérification si le créneau est déjà pris
             cursor.execute("""
-                SELECT COUNT(*) as conflit FROM reservations 
+                SELECT * FROM reservations 
                 WHERE id_materiel = %s 
-                AND statut IN ('Confirmée', 'Récupérée', 'Retard')
+                AND statut IN ('Confirmée', 'Récupérée')
                 AND NOT (date_limite < %s OR date_reservation > %s)
-            """, (id_mat, d_debut, d_fin))
+            """, (id_m, d_res, d_fin))
             
-            res_conflit = cursor.fetchone()
-            #mess erreur
-            if res_conflit['conflit'] > 0:
-                flash(f"Erreur : Le matériel ID {id_mat} est déjà réservé sur ces dates. Veuillez consulter la liste des réservations.", "danger")
+            if cursor.fetchone():
+                flash("Erreur : Ce matériel est déjà réservé sur ces dates.", "danger")
             else:
-                # ok alors envoye dans la bdd
+                # IMPORTANT : Assure-toi que ta colonne s'appelle bien 'id_utilisateur' en BDD
                 cursor.execute("""
-                    INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_limite, statut)
+                    INSERT INTO reservations (id_utilisateur, id_materiel, date_reservation, date_limite, statut)
                     VALUES (%s, %s, %s, %s, 'Confirmée')
-                """, (id_mat, user_id, d_debut, d_fin))
+                """, (id_u, id_m, d_res, d_fin))
                 db.commit()
-                flash("✅ Réservation validée avec succès !", "success")
+                flash("Réservation confirmée avec succès !", "success")
 
-        return redirect(url_for('reservations'))
+        elif action == "annuler":
+            id_res = request.form.get("id_reservation")
+            cursor.execute("UPDATE reservations SET statut = 'Annulée' WHERE id_reservation = %s", (id_res,))
+            db.commit()
+            flash("Réservation annulée.", "success")
 
-    cursor.execute("SELECT id_materiel, nom_modele FROM materiel_stock WHERE actif=1 AND reservable=1")
+    # 4. Récupération des données pour l'affichage
+    cursor.execute("SELECT id_materiel, nom_modele FROM materiel_stock")
     materiels = cursor.fetchall()
 
     cursor.execute("""
-        SELECT r.*, ms.nom_modele FROM reservations r
-        JOIN materiel_stock ms ON r.id_materiel = ms.id_materiel
-        WHERE r.id_utilisateur = %s 
-        ORDER BY r.date_reservation DESC
-    """, (user_id,))
+      SELECT r.*, m.nom_modele 
+      FROM reservations r 
+      JOIN materiel_stock m ON r.id_materiel = m.id_materiel 
+      WHERE r.id_utilisateur = %s 
+      ORDER BY 
+          CASE 
+              WHEN r.statut IN ('Confirmée', 'Récupérée', 'Retard') THEN 1 
+              ELSE 2 
+          END ASC, 
+          r.date_reservation DESC
+    """, (id_u,))
     mes_res = cursor.fetchall()
 
+
+    # 5. Correction du TypeError (conversion datetime -> date)
     for r in mes_res:
         if isinstance(r['date_limite'], datetime):
             r['date_limite'] = r['date_limite'].date()
@@ -337,15 +353,15 @@ def reservations():
             r['date_reservation'] = r['date_reservation'].date()
 
     db.close()
+
+    # 6. Envoi au template
     return render_template("IHM/reservations.html", 
                            materiels=materiels, 
                            mes_reservations=mes_res,
-                           aujourdhui=date.today(),
+                           aujourdhui=aujourdhui,
+                           date_min=aujourdhui.strftime('%Y-%m-%d'),
                            prenom=session.get("prenom"),
                            nom=session.get("nom"))
-
-
-
 #-----------------
 #Administration
 #-----------------
@@ -875,25 +891,38 @@ def scan_objet():
         item = cursor.fetchone()
         
         if item:
-            # Si l'objet est déjà dans la liste temporaire, on bascule son état prévu
+            # --- AJOUT : Vérification réservation future ---
+            cursor.execute("""
+                SELECT date_reservation FROM reservations 
+                WHERE id_materiel = %s AND statut = 'Confirmée' 
+                AND date_reservation > NOW()
+                ORDER BY date_reservation ASC LIMIT 1
+            """, (item['id_materiel'],))
+            prochaine = cursor.fetchone()
+            
+            note_retour = ""
+            if prochaine:
+                note_retour = f"Retour impératif avant : {prochaine['date_reservation'].strftime('%d/%m %H:%M')}"
+
+            # Logique d'état (ton code existant)
             if tag_epc in session_scan:
                 nouveau = "Disponible" if session_scan[tag_epc]['etat'] == "Sortie" else "Sortie"
                 session_scan[tag_epc]['etat'] = nouveau
             else:
-                # Sinon, on regarde son état actuel en BDD pour proposer l'inverse
                 etat_actuel = str(item['etat']).strip().capitalize()
                 nouveau = "Sortie" if etat_actuel == "Disponible" else "Disponible"
                 session_scan[tag_epc] = {
                     'id': item['id_materiel'],
                     'nom': item['nom_modele'],
-                    'etat': nouveau
+                    'etat': nouveau,
+                    'info_reservation': note_retour # On stocke l'info
                 }
             
-            # Envoi à la tablette via SocketIO (on utilise tag_epc comme ID pour le DOM)
             socketio.emit('mouvement_stock', {
                 'id': tag_epc,
                 'nom': item['nom_modele'],
-                'etat': session_scan[tag_epc]['etat']
+                'etat': session_scan[tag_epc]['etat'],
+                'message': note_retour # On envoie le message à la tablette
             })
             return jsonify({"status": "ok"}), 200
             
@@ -901,7 +930,6 @@ def scan_objet():
     finally:
         cursor.close()
         db.close()
-
 
 @app.route("/supprimer_de_session", methods=['POST'])
 def supprimer_de_session():
@@ -917,104 +945,73 @@ def valider_session_finale():
     data = request.json
     user_login = data.get('user')
     password = data.get('password')
-    tags_selectionnes = data.get('tags', []) # Liste des tags cochés dans la popup
+    tags_selectionnes = data.get('tags', [])
 
-    # 1. Si aucun tag n'est sélectionné, on ferme juste la session
     if not tags_selectionnes:
         session_scan = {} 
-        return jsonify({"status": "ok", "message": "Session fermée sans mouvement"})
+        return jsonify({"status": "ok"})
 
-    # 2. Vérification de l'identité
     mdp_hash = hashlib.sha256(password.encode()).hexdigest()
-    
     db = get_db()
     cursor = db.cursor(dictionary=True)
+    
     try:
         cursor.execute("SELECT id_utilisateur FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
         valideur = cursor.fetchone()
-        
         if not valideur:
             return jsonify({"status": "error", "message": "Identifiants incorrects"}), 403
 
         id_u = valideur['id_utilisateur']
 
-        # 3. Traitement uniquement des matériels cochés
         for tag in tags_selectionnes:
             if tag in session_scan:
                 infos = session_scan[tag]
-                
-                # Si l'objet rentre (Disponible), l'utilisateur actuel devient NULL
-                nouvel_utilisateur = None if infos['etat'] == "Disponible" else id_u
+                id_m = infos['id']
 
-                # Mise à jour du stock
-                query = """
-                    UPDATE materiel_stock 
-                    SET etat = %s, id_utilisateur_actuel = %s 
-                    WHERE rfid_tag_epc = %s
-                """
-                cursor.execute(query, (infos['etat'], nouvel_utilisateur, tag))
+                if infos['etat'] == "Sortie":
+                    # --- LOGIQUE RÉSERVATION FUTURE ---
+                    cursor.execute("""
+                        SELECT date_reservation FROM reservations 
+                        WHERE id_materiel = %s AND statut = 'Confirmée' AND date_reservation > NOW()
+                        ORDER BY date_reservation ASC LIMIT 1
+                    """, (id_m,))
+                    prochaine = cursor.fetchone()
+                    
+                    # Date limite par défaut (ex: +2 jours) ou date de la prochaine réservation
+                    from datetime import timedelta
+                    date_limite = prochaine['date_reservation'] if prochaine else (datetime.now() + timedelta(days=2))
 
-                # Enregistrement du mouvement (Historique)
+                    # 1. Mettre à jour le stock
+                    cursor.execute("UPDATE materiel_stock SET etat='Sortie', id_utilisateur_actuel=%s WHERE id_materiel=%s", (id_u, id_m))
+                    
+                    # 2. Créer ou mettre à jour la ligne de réservation
+                    # On vérifie si l'utilisateur avait déjà réservé pour maintenant
+                    cursor.execute("""
+                        UPDATE reservations SET statut='Récupérée', date_limite=%s 
+                        WHERE id_materiel=%s AND id_utilisateur=%s AND statut='Confirmée' 
+                        AND date_reservation <= NOW()
+                    """, (date_limite, id_m, id_u))
+                    
+                    if cursor.rowcount == 0:
+                        # Emprunt immédiat sans réservation préalable
+                        cursor.execute("""
+                            INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_limite, statut)
+                            VALUES (%s, %s, NOW(), %s, 'Récupérée')
+                        """, (id_m, id_u, date_limite))
+
+                else: # Cas de l'ENTRÉE (Disponible)
+                    cursor.execute("UPDATE materiel_stock SET etat='Disponible', id_utilisateur_actuel=NULL WHERE id_materiel=%s", (id_m,))
+                    cursor.execute("UPDATE reservations SET statut='Rendu' WHERE id_materiel=%s AND statut IN ('Récupérée', 'Retard')", (id_m,))
+
+                # Historique mouvements
                 cursor.execute("""
                     INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
                     VALUES (%s, %s, %s, NOW())
-                """, (infos['id'], id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
+                """, (id_m, id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
                 
-                # --- IMPORTANT : On retire l'objet de la session globale car il est traité ---
                 del session_scan[tag]
 
         db.commit()
-        
-        # On ne fait PLUS session_scan = {} ici ! 
-        # On a supprimé seulement les tags validés. 
-        # Si d'autres tags étaient affichés mais non cochés, ils restent dans session_scan.
-        
-        return jsonify({"status": "ok"})
-
-    except Exception as e:
-        if db: db.rollback()
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        if cursor: cursor.close()
-        if db: db.close()
-
-    # ---------------------------------------------------------------------
-
-    # Si il y a des tags, on vérifie l'identité normalement
-    mdp_hash = hashlib.sha256(password.encode()).hexdigest()
-    
-    db = get_db()
-    cursor = db.cursor(dictionary=True)
-    try:
-        # 1. Vérification de l'utilisateur qui valide
-        cursor.execute("SELECT id_utilisateur FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
-        valideur = cursor.fetchone()
-        
-        if not valideur:
-            return jsonify({"status": "error", "message": "Identifiants incorrects"}), 403
-
-        id_u = valideur['id_utilisateur']
-
-        # 2. Traitement de chaque matériel choisi
-        for tag in tags_selectionnes:
-            if tag in session_scan:
-                infos = session_scan[tag]
-                nouvel_utilisateur = None if infos['etat'] == "Disponible" else id_u
-
-                query = """
-                    UPDATE materiel_stock 
-                    SET etat = %s, id_utilisateur_actuel = %s 
-                    WHERE rfid_tag_epc = %s
-                """
-                cursor.execute(query, (infos['etat'], nouvel_utilisateur, tag))
-
-                cursor.execute("""
-                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                    VALUES (%s, %s, %s, NOW())
-                """, (infos['id'], id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
-
-        db.commit()
-        session_scan = {} # Reset la session de scan
         return jsonify({"status": "ok"})
 
     except Exception as e:
@@ -1023,7 +1020,6 @@ def valider_session_finale():
     finally:
         cursor.close()
         db.close()
-
 # -------------------------------
 # LOGOUT
 # -------------------------------

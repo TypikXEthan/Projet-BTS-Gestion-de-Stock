@@ -3,17 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <title>Réservations - RFID</title>
-<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
-
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
-        /* Styles pour les messages d'alerte */
         .alert { padding: 15px; margin-bottom: 20px; border-radius: 5px; color: white; font-weight: bold; }
         .alert-danger { background-color: #ff4d4d; border: 1px solid #cc0000; }
         .alert-success { background-color: #4CAF50; border: 1px solid #388E3C; }
         
-        /* Styles des badges */
-        .badge-status { padding: 5px 12px; border-radius: 20px; font-size: 0.85em; color: white; display: inline-block; }
+        .badge-status { padding: 5px 12px; border-radius: 20px; font-size: 0.85em; color: white; display: inline-block; font-weight: bold; }
         .badge-bleu { background-color: #3498db; }
         .badge-vert { background-color: #2ecc71; }
         .badge-rouge { background-color: #e74c3c; }
@@ -45,7 +42,6 @@
         <div class="titre-page">
             <h1>Gestion des Réservations</h1>
         </div>
-
         <div class="menu-utilisateur" id="userBtn">
             <div class="user-info">
                 <span>{{ prenom }} {{ nom }}</span>
@@ -79,7 +75,7 @@
                 <select name="id_materiel" required>
                     <option value="">Choisir...</option>
                     {% for m in materiels %}
-                    <option value="{{ m.id_materiel }}">{{ m.nom_modele }} (ID: {{ m.id_materiel }})</option>
+                    <option value="{{ m.id_materiel }}">{{ m.nom_modele }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -119,26 +115,26 @@
                         
                         {% elif r.statut == 'Récupérée' %}
                             {% if r.date_limite < aujourdhui %}
-                                <span class="badge-status badge-rouge"> En retard</span>
+                                <span class="badge-status badge-rouge">⚠️ En retard</span>
                             {% else %}
-                                <span class="badge-status badge-vert"> En possession</span>
+                                <span class="badge-status badge-vert">🧤 En possession</span>
                             {% endif %}
                         
                         {% elif r.statut == 'Retard' %}
-                            <span class="badge-status badge-rouge"> En retard</span>
+                            <span class="badge-status badge-rouge">🚨 Retard</span>
 
-                        {% elif r.statut == 'Terminée' %}
-                            <span class="badge-status badge-gris"> Terminée</span>
+                        {% elif r.statut == 'Terminée' or r.statut == 'Rendu' %}
+                            <span class="badge-status badge-gris">✅ Rendu</span>
                         
                         {% elif r.statut == 'Annulée' %}
-                            <span class="badge-status" style="background:#bbb;"> Annulée</span>
+                            <span class="badge-status" style="background:#bbb;">Annulée</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if r.statut == 'Confirmée' %}
                             <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');">
                                 <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-                                <button type="submit" name="action" value="annuler" class="btn-icon-danger">Annuler</button>
+                                <button type="submit" name="action" value="annuler" class="btn-icon-danger" style="color:red; background:none; border:none; cursor:pointer; text-decoration:underline;">Annuler</button>
                             </form>
                         {% else %}
                             <small style="color: gray;">--</small>
@@ -147,7 +143,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" style="text-align:center;">Aucune réservation pour le moment.</td>
+                    <td colspan="5" style="text-align:center; padding:20px;">Aucune réservation pour le moment.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -157,15 +153,12 @@
 </div>
 
 <script>
-    // Menu déroulant utilisateur
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
-
     userBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         userDropdown.classList.toggle('show');
     });
-
     window.addEventListener('click', function() {
         if (userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');
