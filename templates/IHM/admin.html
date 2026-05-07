@@ -19,6 +19,11 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         .badge-statut { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; background: #e9ecef; color: #495057; }
+
+        /* Nouveaux styles pour l'oeil du mot de passe */
+        .pwd-container { position: relative; width: 100%; }
+        .toggle-pwd { position: absolute; right: 10px; top: 40%; transform: translateY(-50%); cursor: pointer; user-select: none; z-index: 10; color: #666; }
+        .input-modal-pwd { padding-right: 35px !important; }
     </style>
 </head>
 <body class="corps-tableau-de-bord">
@@ -50,6 +55,16 @@
             <a href="/logout" style="display:block; padding:10px; text-decoration:none; color:red">Déconnexion</a>
         </div>
     </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div style="padding: 15px; margin: 10px 0; border-radius: 4px; background-color: {% if category == 'danger' %}#f8d7da{% elif category == 'success' %}#d4edda{% else %}#fff3cd{% endif %}; color: {% if category == 'danger' %}#721c24{% elif category == 'success' %}#155724{% else %}#856404{% endif %};">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <div class="horaires-panel">
         <div>
@@ -94,7 +109,14 @@
                     <input type="text" name="nom" placeholder="Nom" class="input-modal" required>
                     <input type="text" name="prenom" placeholder="Prénom" class="input-modal" required>
                     <input type="text" name="utilisateur" placeholder="Login" class="input-modal" required>
-                    <input type="password" name="mot_de_passe" placeholder="MDP" class="input-modal" required>
+                    
+                    <div class="pwd-container">
+                        <input type="password" name="mot_de_passe" id="creer_mdp" placeholder="MDP (10 car. + 1 spéc.)" 
+                               class="input-modal input-modal-pwd" required 
+                               pattern="^(?=.*[!@#$%^&*(),.?\&quot;:{}|<>]).{10,}$"
+                               title="Le mot de passe doit faire au moins 10 caractères et contenir au moins un caractère spécial.">
+                        <span class="toggle-pwd" onclick="toggleMdp('creer_mdp')">👁️</span>
+                    </div>
                 </div>
                 <input type="text" name="badge_uid" placeholder="Badge UID (Optionnel)" class="input-modal">
                 <input type="email" name="email" placeholder="Email" class="input-modal">
@@ -211,8 +233,14 @@
                 </select>
             </div>
             
-            <label>Mot de passe </label>
-            <input type="password" name="nouveau_mdp" placeholder="Nouveau MDP (Optionnel)" class="input-modal">
+            <label>Mot de passe (Optionnel)</label>
+            <div class="pwd-container">
+                <input type="password" name="nouveau_mdp" id="modif_mdp" placeholder="10 car. + 1 spécial pour changer" 
+                       class="input-modal input-modal-pwd"
+                       pattern="^(?=.*[!@#$%^&*(),.?\&quot;:{}|<>]).{10,}$"
+                       title="Si vous remplissez ce champ, il doit faire au moins 10 caractères et contenir un caractère spécial.">
+                <span class="toggle-pwd" onclick="toggleMdp('modif_mdp')">👁️</span>
+            </div>
             
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px">
                 <button type="submit" class="btn btn-success" style="background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Sauvegarder</button>
@@ -250,7 +278,19 @@
 </div>
 
 <script>
-    // JS UTILISATEUR : On a supprimé l'argument 'badge'
+    // Fonction pour afficher/masquer le mot de passe
+    function toggleMdp(idInput) {
+        const input = document.getElementById(idInput);
+        const icon = input.nextElementSibling;
+        if (input.type === "password") {
+            input.type = "text";
+            icon.textContent = "🙈";
+        } else {
+            input.type = "password";
+            icon.textContent = "👁️";
+        }
+    }
+
     function ouvrirUser(id, log, nom, pre, mail, tel, role, adm) {
         document.getElementById('m_u_id').value = id;
         document.getElementById('m_u_login').value = log;
@@ -260,10 +300,7 @@
         document.getElementById('m_u_tel').value = tel;
         document.getElementById('m_u_role').value = role;
         document.getElementById('m_u_admin').value = adm;
-        
-        // On vide le badge pour qu'il soit "Optionnel" et caché
         document.getElementById('m_u_badge').value = "";
-        
         document.getElementById('userAction').value = "modifier_utilisateur_complet";
         document.getElementById('modalUser').classList.add('active');
     }
@@ -275,7 +312,6 @@
         }
     }
 
-    // JS MATÉRIEL
     function ouvrirMat(id, nom, rfid, etat, uid) {
         document.getElementById('m_m_id').value = id;
         document.getElementById('m_m_nom').value = nom;
@@ -287,7 +323,6 @@
 
     function fermerModal(id) { document.getElementById(id).classList.remove('active'); }
     
-    // Fermeture au clic extérieur
     window.onclick = function(event) { 
         if (event.target.className === 'modal active') event.target.classList.remove('active'); 
     }

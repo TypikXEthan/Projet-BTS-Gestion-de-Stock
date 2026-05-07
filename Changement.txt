@@ -1,2 +1,1 @@
-Admin ajout horaire hachage des infos genre badges,et mdp dans le panel admin 
-Truc a faire changement systeme de reservation 
+10 caract et 1 caract special en mdp + afficher cacher mdp 

@@ -32,6 +32,24 @@
             border-radius: 6px;
             box-sizing: border-box;
         }
+
+        /* Style pour le conteneur du mot de passe avec l'oeil */
+        .pwd-container {
+            position: relative;
+            width: 100%;
+        }
+        .toggle-pwd {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            user-select: none;
+            z-index: 10;
+        }
+        .input-modal-pwd {
+            padding-right: 40px !important;
+        }
     </style>
 </head>
 <body class="corps-tableau-de-bord">
@@ -62,7 +80,18 @@
             <div class="dropdown-menu" id="userDropdown">
                 <a href="/logout" style="color:red; text-decoration:none; padding:10px; display:block;">Déconnexion</a>
             </div>
-        </header>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div style="padding: 10px; margin-bottom: 15px; border-radius: 5px; background-color: {% if category == 'danger' %}#f8d7da{% else %}#d4edda{% endif %}; color: {% if category == 'danger' %}#721c24{% else %}#155724{% endif %}; border: 1px solid {% if category == 'danger' %}#f5c6cb{% else %}#c3e6cb{% endif %};">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <div class="profil-container">
         <div class="admin-card carte-identite">
@@ -145,8 +174,14 @@
             <label>Téléphone</label>
             <input type="text" name="telephone" value="{{ u.telephone or '' }}" class="input-modal">
             
-            <label>Changer le mot de passe (optionnel)</label>
-            <input type="password" name="nouveau_mdp" class="input-modal" placeholder="Laisser vide pour ne pas changer">
+            <label>Changer le mot de passe (10 car. + 1 spécial)</label>
+            <div class="pwd-container">
+                <input type="password" name="nouveau_mdp" id="mdp_profil" class="input-modal input-modal-pwd" 
+                       placeholder="Laisser vide pour ne pas changer"
+                       pattern="^(?=.*[!@#$%^&*(),.?\&quot;:{}|<>]).{10,}$"
+                       title="Le mot de passe doit faire au moins 10 caractères et contenir au moins un caractère spécial.">
+                <span class="toggle-pwd" onclick="toggleMdp('mdp_profil')">👁️</span>
+            </div>
             
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button type="submit" class="btn btn-success" style="flex:1">Sauvegarder</button>
@@ -160,14 +195,29 @@
     // Menu Dropdown
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
-    userBtn.onclick = (e) => { e.stopPropagation(); userDropdown.classList.toggle('show'); };
+    if(userBtn) {
+        userBtn.onclick = (e) => { e.stopPropagation(); userDropdown.classList.toggle('show'); };
+    }
 
     // Gestion Modale
     function ouvrirProfil() { document.getElementById('modalEdit').classList.add('active'); }
     function fermerProfil() { document.getElementById('modalEdit').classList.remove('active'); }
 
+    // Fonction pour afficher/masquer le MDP
+    function toggleMdp(idInput) {
+        const input = document.getElementById(idInput);
+        const icon = input.nextElementSibling;
+        if (input.type === "password") {
+            input.type = "text";
+            icon.textContent = "🙈";
+        } else {
+            input.type = "password";
+            icon.textContent = "👁️";
+        }
+    }
+
     window.onclick = (event) => {
-        userDropdown.classList.remove('show');
+        if(userDropdown) userDropdown.classList.remove('show');
         if (event.target.className === 'modal active') fermerProfil();
     };
 </script>

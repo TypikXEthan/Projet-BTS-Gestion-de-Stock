@@ -8,6 +8,7 @@ from flask_socketio import SocketIO, emit
 import uuid
 import os # <--- Ajoute ça
 from dotenv import load_dotenv # <--- Ajoute ça
+import re
 
 # Charger les variables du fichier .env
 load_dotenv()
@@ -33,6 +34,14 @@ def get_db():
 def make_session_permanent():
     session.permanent = True
     app.permanent_session_lifetime = timedelta(minutes=60)
+
+def est_mdp_valide(mdp):
+    # Minimum 10 caractères, au moins un caractère spécial
+    if len(mdp) < 10:
+        return False
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", mdp):
+        return False
+    return True
 
 ##### LOGIN #####
 @app.route("/", methods=["GET", "POST"])
@@ -340,12 +349,9 @@ def reservations():
 #-----------------
 #Administration
 #-----------------
-#-----------------
-#Administration
-#-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
-    # Vérifie que l'utilisateur est bien admin=1 dans la bdd 
+    # Vérification de sécurité
     if "id_user" not in session or session.get("admin") != 1:
         flash("Accès réservé aux administrateurs.", "danger")
         return redirect("/")
@@ -374,7 +380,7 @@ def admin():
             db.commit()
             flash("Horaires de passage mis à jour avec succès.", "success")
 
-        # --- CRÉER UTILISATEUR (AVEC SALT) ---
+# --- CRÉER UTILISATEUR (AVEC SALT) ---
         elif action == "creer_utilisateur":
             nom = request.form.get("nom")
             prenom = request.form.get("prenom")
@@ -386,12 +392,18 @@ def admin():
             role = request.form.get("role")
             admin_status = request.form.get("admin_status")
 
+            # --- VALIDATION DU MOT DE PASSE ---
+            # Vérifie 10 caractères ET au moins un caractère spécial
+            if len(mdp_clair) < 10 or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", mdp_clair):
+                flash("Erreur : Le mot de passe doit contenir au moins 10 caractères et un caractère spécial.", "danger")
+                return redirect(url_for('admin'))
+
             # Génération du Salt unique
             nouveau_salt = uuid.uuid4().hex
             # Hashage du mot de passe avec le Salt
             mdp_hash = hashlib.sha256((mdp_clair + nouveau_salt).encode()).hexdigest()
             
-            # Hashage du badge (Hash simple pour la performance au scan)
+            # Hashage du badge
             badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
 
             try:
@@ -423,8 +435,13 @@ def admin():
                 b_hash = hashlib.sha256(nouveau_badge.encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET badge_uid=%s WHERE id_utilisateur=%s", (b_hash, id_u))
 
-            # Si un nouveau mot de passe est renseigné (Régénération du Salt)
+            # Si un nouveau mot de passe est renseigné
             if nouveau_mdp and nouveau_mdp.strip() != "":
+                # --- VALIDATION DU NOUVEAU MOT DE PASSE ---
+                if len(nouveau_mdp) < 10 or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", nouveau_mdp):
+                    flash("Erreur : Le nouveau mot de passe doit contenir 10 caractères et un caractère spécial.", "danger")
+                    return redirect(url_for('admin'))
+
                 nouveau_sel = uuid.uuid4().hex
                 m_hash = hashlib.sha256((nouveau_mdp + nouveau_sel).encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET mot_de_passe=%s, salt=%s WHERE id_utilisateur=%s", 
@@ -433,48 +450,42 @@ def admin():
             db.commit()
             flash("Profil utilisateur mis à jour.", "info")
 
+
         # --- SUPPRIMER UTILISATEUR ---
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
-                flash("Vous ne pouvez pas supprimer votre propre compte admin !", "danger")
+                flash("Vous ne pouvez pas supprimer votre propre compte !", "danger")
             else:
                 cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur = %s", (id_u,))
                 db.commit()
-                flash("Utilisateur supprimé définitivement.", "warning")
+                flash("Utilisateur supprimé.", "warning")
 
-        # --- AJOUTER MATÉRIEL ---
+        # --- MATÉRIEL ---
         elif action == "ajouter_materiel":
             cursor.execute("""
                 INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
                 VALUES (%s, %s, %s, %s, 1, 1)
-            """, (request.form.get("id_inventaire"), request.form.get("nom_modele"), 
-                  request.form.get("rfid_tag"), request.form.get("etat")))
+            """, (request.form.get("id_inventaire"), request.form.get("nom_modele"), request.form.get("rfid_tag"), request.form.get("etat")))
             db.commit()
-            flash("Nouveau matériel ajouté au stock.", "success")
+            flash("Matériel ajouté.", "success")
 
-        # --- MODIFIER MATÉRIEL ---
         elif action == "modifier_materiel_complet":
             id_m = request.form.get("id_materiel")
-            u_actuel = request.form.get("id_utilisateur_actuel")
-            u_actuel = u_actuel if u_actuel != "" else None
-            
+            u_act = request.form.get("id_utilisateur_actuel")
+            u_act = u_act if u_act != "" else None
             cursor.execute("""
-                UPDATE materiel_stock 
-                SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s 
-                WHERE id_materiel=%s
-            """, (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), 
-                  request.form.get("nouveau_statut"), u_actuel, id_m))
+                UPDATE materiel_stock SET nom_modele=%s, rfid_tag_epc=%s, etat=%s, id_utilisateur_actuel=%s WHERE id_materiel=%s
+            """, (request.form.get("nom_modele"), request.form.get("rfid_tag_epc"), request.form.get("nouveau_statut"), u_act, id_m))
             db.commit()
-            flash("Fiche matériel mise à jour.", "info")
+            flash("Matériel mis à jour.", "info")
 
         return redirect(url_for('admin'))
-    
-    # --- RÉCUPÉRATION DES DONNÉES POUR L'AFFICHAGE ---
-    cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
-    horaires = cursor.fetchone()
-    if not horaires: horaires = {'debut': '08:00', 'fin': '18:00'}
 
+    # --- AFFICHAGE ---
+    cursor.execute("SELECT heure_debut as debut, heure_fin as fin FROM portes LIMIT 1")
+    horaires = cursor.fetchone() or {'debut': '08:00', 'fin': '18:00'}
+    
     cursor.execute("SELECT * FROM utilisateurs ORDER BY nom ASC")
     utilisateurs_list = cursor.fetchall()
 
@@ -482,8 +493,7 @@ def admin():
     materiels_list = cursor.fetchall()
 
     cursor.execute("""
-        SELECT r.id_reservation, r.date_reservation, r.date_rendu_prevue, r.statut,
-               u.nom, u.prenom, m.nom_modele
+        SELECT r.id_reservation, r.date_reservation, r.date_rendu_prevue, r.statut, u.nom, u.prenom, m.nom_modele
         FROM reservations r
         JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
         JOIN materiel_stock m ON r.id_materiel = m.id_materiel
@@ -494,16 +504,9 @@ def admin():
     cursor.close()
     db.close()
 
-    return render_template(
-        "IHM/admin.html",
-        horaires=horaires,
-        utilisateurs=utilisateurs_list,
-        materiels=materiels_list,
-        reservations=reservations_list,
-        prenom=session.get("prenom"),
-        nom=session.get("nom")
-    )
-
+    return render_template("IHM/admin.html", horaires=horaires, utilisateurs=utilisateurs_list, 
+                           materiels=materiels_list, reservations=reservations_list, 
+                           prenom=session.get("prenom"), nom=session.get("nom"))
 
 #------------------
 #prets
@@ -638,30 +641,42 @@ def profil(user_id=None):
     cursor = db.cursor(dictionary=True)
     target_id = user_id if user_id is not None else session["id_user"]
 
-    # modification profils email/tel/mdp
     if request.method == "POST":
         email = request.form.get("email")
         tel = request.form.get("telephone")
         nouveau_mdp = request.form.get("nouveau_mdp")
 
-        # Mupdate dans la bdd 
+        # Mise à jour des infos de base
         cursor.execute("""
             UPDATE utilisateurs 
             SET email = %s, telephone = %s 
             WHERE id_utilisateur = %s
         """, (email, tel, target_id))
 
-        # update du mdp si remplie 
+        # Update du mot de passe avec Salt et Robustesse
         if nouveau_mdp and nouveau_mdp.strip() != "":
-            import hashlib
-            h_mdp = hashlib.sha256(nouveau_mdp.encode()).hexdigest()
-            cursor.execute("UPDATE utilisateurs SET mot_de_passe = %s WHERE id_utilisateur = %s", (h_mdp, target_id))
+            import re
+            import uuid
+            # Vérification 10 caractères + 1 spécial
+            if len(nouveau_mdp) < 10 or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", nouveau_mdp):
+                flash("Le nouveau mot de passe doit contenir au moins 10 caractères et un caractère spécial.", "danger")
+                return redirect(url_for('profil', user_id=user_id))
+
+            # Génération d'un nouveau Salt
+            nouveau_sel = uuid.uuid4().hex
+            h_mdp = hashlib.sha256((nouveau_mdp + nouveau_sel).encode()).hexdigest()
+            
+            cursor.execute("""
+                UPDATE utilisateurs 
+                SET mot_de_passe = %s, salt = %s 
+                WHERE id_utilisateur = %s
+            """, (h_mdp, nouveau_sel, target_id))
         
         db.commit()
         flash("Profil mis à jour avec succès !", "success")
         return redirect(url_for('profil', user_id=user_id))
 
-    #AFFICHAGE des infos users 
+    # ... reste du code (SELECT infos users) ...
     cursor.execute("SELECT * FROM utilisateurs WHERE id_utilisateur = %s", (target_id,))
     user_info = cursor.fetchone()
 
@@ -681,9 +696,7 @@ def profil(user_id=None):
 
     cursor.close()
     db.close()
-
     return render_template("IHM/profil.html", u=user_info, possedes=materiels_possedes, reservations=reservations, nom=session["nom"], prenom=session["prenom"])
-
 
 
 #--------------
