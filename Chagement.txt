@@ -1,3 +1,0 @@
-Badge est caché dans modif user panel admin 
-Hach 256 +salt 
-ajout d'un .env 
