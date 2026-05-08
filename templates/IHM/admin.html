@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
         .statut-confirme { background: #3498db !important; color: white !important; } /* Bleu */
-	.statut-recupere { background: #27ae60 !important; color: white !important; } /* Vert */
-	.statut-Retard { background: #e74c3c !important; color: white !important; }   /* Rouge */
-	.statut-attente { background: #f1c40f !important; color: #333 !important; }    /* Jaune (par défaut) */
+        .statut-recupere { background: #27ae60 !important; color: white !important; } /* Vert */
+        .statut-Retard { background: #e74c3c !important; color: white !important; }   /* Rouge */
+        .statut-attente { background: #f1c40f !important; color: #333 !important; }    /* Jaune (par défaut) */
         .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; }
         .modal.active { display: flex !important; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 550px; max-height: 90vh; overflow-y: auto; color: #333; }
@@ -23,8 +23,8 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         .badge-statut { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; background: #e9ecef; color: #495057; }
+        .id-label { color: #666; font-size: 0.85em; font-weight: normal; }
 
-        /* Nouveaux styles pour l'oeil du mot de passe */
         .pwd-container { position: relative; width: 100%; }
         .toggle-pwd { position: absolute; right: 10px; top: 40%; transform: translateY(-50%); cursor: pointer; user-select: none; z-index: 10; color: #666; }
         .input-modal-pwd { padding-right: 35px !important; }
@@ -151,41 +151,34 @@
         <tbody>
             {% for r in reservations %}
             <tr>
-                <td><b>{{ r.nom_modele }}</b></td>
+                <td>
+                    <b>{{ r.nom_modele }}</b><br>
+                    <span class="id-label">ID: #{{ r.id_materiel }}</span>
+                </td>
                 <td>{{ r.prenom }} {{ r.nom }}</td>
-
-                <!-- DATE DE RESERVATION -->
                 <td>{{ r.date_reservation }}</td>
-
-                <!-- ✅ CORRECTION ICI -->
                 <td>{{ r.date_limite }}</td>
-
-                 <td>
-    		     <span class="badge-statut 
-        		 {% if r.statut == 'Confirmée' %}statut-confirme
-        		 {% elif r.statut == 'Récupérée' %}statut-recupere
-        		 {% elif r.statut == 'Retard' %}statut-Retard
-        		 {% elif r.statut == 'En attente' %}statut-attente
-        		 {% endif %}">
-        		 {{ r.statut }}
-    		     </span>
-	        </td>
+                <td>
+                     <span class="badge-statut 
+                         {% if r.statut == 'Confirmée' %}statut-confirme
+                         {% elif r.statut == 'Récupérée' %}statut-recupere
+                         {% elif r.statut == 'Retard' %}statut-Retard
+                         {% elif r.statut == 'En attente' %}statut-attente
+                         {% endif %}">
+                         {{ r.statut }}
+                     </span>
+                </td>
                 <td>
                     <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');">
                         <input type="hidden" name="action" value="supprimer_reservation">
                         <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-                        <button type="submit" class="btn-supprimer">
-                            Annuler
-                        </button>
+                        <button type="submit" class="btn-supprimer">Annuler</button>
                     </form>
                 </td>
             </tr>
-
             {% else %}
             <tr>
-                <td colspan="6" style="text-align:center; opacity:0.5; padding:20px;">
-                    Aucune réservation enregistrée.
-                </td>
+                <td colspan="6" style="text-align:center; opacity:0.5; padding:20px;">Aucune réservation enregistrée.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -305,7 +298,6 @@
 </div>
 
 <script>
-    // Fonction pour afficher/masquer le mot de passe
     function toggleMdp(idInput) {
         const input = document.getElementById(idInput);
         const icon = input.nextElementSibling;

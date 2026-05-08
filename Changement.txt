@@ -1,3 +1,2 @@
-Tout marche bien sauf reservation faire en sorte qu'on puissent pas reserver quand le matériels est sorti 
-et flux_materiel mais il me faut le compte ionos pour faire des tests 
-Et mettre la vrai email sur le vps pas la mienne perso 
+Admin ajout horaire hachage des infos genre badges,et mdp dans le panel admin 
+Truc a faire changement systeme de reservation 

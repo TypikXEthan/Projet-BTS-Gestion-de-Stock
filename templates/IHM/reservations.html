@@ -15,6 +15,12 @@
         .badge-vert { background-color: #2ecc71; }
         .badge-rouge { background-color: #e74c3c; }
         .badge-gris { background-color: #95a5a6; }
+
+        .form-reservation-inline { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; }
+        
+        /* Petit style pour l'ID sous le nom */
+        .id-label { color: #666; font-size: 0.85em; font-weight: normal; }
     </style>
 </head>
 
@@ -72,10 +78,14 @@
         <form method="POST" class="form-reservation-inline">
             <div class="form-group">
                 <label>Matériel</label>
-                <select name="id_materiel" required>
+                <select name="id_materiel" required style="min-width: 250px;">
                     <option value="">Choisir...</option>
                     {% for m in materiels %}
-                    <option value="{{ m.id_materiel }}">{{ m.nom_modele }}</option>
+                        {% set etat_propre = m.etat|lower|trim %}
+                        <option value="{{ m.id_materiel }}" {% if etat_propre != 'disponible' %}disabled{% endif %}>
+                            [ID:{{ m.id_materiel }}] {{ m.nom_modele }} 
+                            ({% if etat_propre == 'disponible' %}Disponible{% else %}{{ m.etat }}{% endif %})
+                        </option>
                     {% endfor %}
                 </select>
             </div>
@@ -106,7 +116,10 @@
             <tbody>
                 {% for r in mes_reservations %}
                 <tr>
-                    <td><strong>{{ r.nom_modele }}</strong></td>
+                    <td>
+                        <strong>{{ r.nom_modele }}</strong><br>
+                        <span class="id-label">ID Matériel: #{{ r.id_materiel }}</span>
+                    </td>
                     <td>{{ r.date_reservation.strftime('%d/%m/%Y') }}</td>
                     <td>{{ r.date_limite.strftime('%d/%m/%Y') }}</td>
                     <td>
@@ -153,14 +166,19 @@
 </div>
 
 <script>
+    // Script pour le menu déroulant utilisateur
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
-    userBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        userDropdown.classList.toggle('show');
-    });
+    
+    if (userBtn) {
+        userBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            userDropdown.classList.toggle('show');
+        });
+    }
+
     window.addEventListener('click', function() {
-        if (userDropdown.classList.contains('show')) {
+        if (userDropdown && userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');
         }
     });

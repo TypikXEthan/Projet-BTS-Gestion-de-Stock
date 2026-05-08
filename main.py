@@ -411,18 +411,17 @@ def voir_profil_public(id_user_vise):
 # -------------------------------
 @app.route("/reservations", methods=["GET", "POST"])
 def reservations():
-    # 1. Vérification de la session (Ethan, on utilise 'id_user' comme vu dans tes logs)
+    # 1. Sécurité session
     if "id_user" not in session:
         return redirect(url_for("login"))
 
-    # 2. Connexion via ta fonction existante
     db = get_db() 
     cursor = db.cursor(dictionary=True)
     
     id_u = session["id_user"]
     aujourdhui = date.today()
 
-    # 3. Gestion des actions (POST)
+    # 2. Gestion des actions
     if request.method == "POST":
         action = request.form.get("action")
 
@@ -431,24 +430,31 @@ def reservations():
             d_res = request.form.get("date_reservation")
             d_fin = request.form.get("date_fin")
 
-            # Vérification si le créneau est déjà pris
-            cursor.execute("""
-                SELECT * FROM reservations 
-                WHERE id_materiel = %s 
-                AND statut IN ('Confirmée', 'Récupérée')
-                AND NOT (date_limite < %s OR date_reservation > %s)
-            """, (id_m, d_res, d_fin))
-            
-            if cursor.fetchone():
-                flash("Erreur : Ce matériel est déjà réservé sur ces dates.", "danger")
+            # Vérification de l'état réel du matériel
+            cursor.execute("SELECT etat FROM materiel_stock WHERE id_materiel = %s", (id_m,))
+            materiel = cursor.fetchone()
+
+            # .strip().lower() permet d'être insensible aux espaces et à la casse
+            if materiel and materiel['etat'].strip().lower() != 'disponible':
+                flash(f"Erreur : Ce matériel est actuellement {materiel['etat']} et ne peut être réservé.", "danger")
             else:
-                # IMPORTANT : Assure-toi que ta colonne s'appelle bien 'id_utilisateur' en BDD
+                # Vérification si une réservation active existe déjà sur ces dates
                 cursor.execute("""
-                    INSERT INTO reservations (id_utilisateur, id_materiel, date_reservation, date_limite, statut)
-                    VALUES (%s, %s, %s, %s, 'Confirmée')
-                """, (id_u, id_m, d_res, d_fin))
-                db.commit()
-                flash("Réservation confirmée avec succès !", "success")
+                    SELECT * FROM reservations 
+                    WHERE id_materiel = %s 
+                    AND statut IN ('Confirmée', 'Récupérée', 'Retard')
+                    AND NOT (date_limite < %s OR date_reservation > %s)
+                """, (id_m, d_res, d_fin))
+                
+                if cursor.fetchone():
+                    flash("Erreur : Ce créneau est déjà réservé par un autre utilisateur.", "danger")
+                else:
+                    cursor.execute("""
+                        INSERT INTO reservations (id_utilisateur, id_materiel, date_reservation, date_limite, statut)
+                        VALUES (%s, %s, %s, %s, 'Confirmée')
+                    """, (id_u, id_m, d_res, d_fin))
+                    db.commit()
+                    flash("Réservation effectuée avec succès !", "success")
 
         elif action == "annuler":
             id_res = request.form.get("id_reservation")
@@ -456,9 +462,9 @@ def reservations():
             db.commit()
             flash("Réservation annulée.", "success")
 
-    # 4. Récupération des données pour l'affichage
-    cursor.execute("SELECT id_materiel, nom_modele FROM materiel_stock")
-    materiels = cursor.fetchall()
+    # 3. Récupération des données pour le rendu
+    cursor.execute("SELECT id_materiel, nom_modele, etat FROM materiel_stock")
+    liste_materiels = cursor.fetchall()
 
     cursor.execute("""
       SELECT r.*, m.nom_modele 
@@ -474,8 +480,7 @@ def reservations():
     """, (id_u,))
     mes_res = cursor.fetchall()
 
-
-    # 5. Correction du TypeError (conversion datetime -> date)
+    # Conversion forcée pour éviter les erreurs de template
     for r in mes_res:
         if isinstance(r['date_limite'], datetime):
             r['date_limite'] = r['date_limite'].date()
@@ -483,15 +488,15 @@ def reservations():
             r['date_reservation'] = r['date_reservation'].date()
 
     db.close()
-
-    # 6. Envoi au template
     return render_template("IHM/reservations.html", 
-                           materiels=materiels, 
+                           materiels=liste_materiels, 
                            mes_reservations=mes_res,
                            aujourdhui=aujourdhui,
                            date_min=aujourdhui.strftime('%Y-%m-%d'),
                            prenom=session.get("prenom"),
                            nom=session.get("nom"))
+
+
 #-----------------
 #Administration
 #-----------------
@@ -640,6 +645,7 @@ def admin():
 
     cursor.execute("""
         SELECT r.id_reservation, 
+               r.id_materiel,        -- Ajout de l'ID ici
                r.date_reservation, 
                r.date_limite, 
                r.statut, 
