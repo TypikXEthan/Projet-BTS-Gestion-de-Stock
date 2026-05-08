@@ -120,7 +120,7 @@
 
     <img src="{{ url_for('static', filename='images/Logo_lavoisier.jpg') }}" alt="Logo Lavoisier" class="logo-lycee">
 
-    <div class="carte-connexion">
+<div class="carte-connexion">
         <h2>Connexion</h2>
         <p>Accès au système RFID</p>
 
@@ -128,16 +128,18 @@
             <div class="form-group">
                 <input type="text" name="utilisateur" id="userField" placeholder="Nom d'utilisateur" required>
             </div>
-            
+
             <div class="form-group">
                 <div class="pwd-container">
                     <input type="password" name="mot_de_passe" id="passField" placeholder="Mot de passe" required>
                     <span class="toggle-pwd" onclick="toggleMdp()">👁️</span>
                 </div>
             </div>
-            
+
             <button type="submit" id="submitBtn">Se connecter</button>
         </form>
+
+        <a href="https://lavoisierlocal.online/tablette" class="btn-tablette">📱 Mode Tablette</a>
 
         {% if erreur %}
         <div class="erreur" id="msgErreur">{{ erreur }}</div>

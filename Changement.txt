@@ -1,1 +1,2 @@
-Système reservation refait + message pour prévenir materiel reserver le XX/XX dans flux_materiel
+Admin ajout horaire hachage des infos genre badges,et mdp dans le panel admin 
+Truc a faire changement systeme de reservation 

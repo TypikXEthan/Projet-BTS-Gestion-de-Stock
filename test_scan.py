@@ -18,7 +18,7 @@ def simuler_lecteur():
 
         try:
             # On envoie vers la route de scan temporaire
-            url = "http://192.168.1.166:5000/scan_objet"
+            url = "https://lavoisierlocal.online/scan_objet"
             response = requests.post(url, json={"rfid_tag_epc": tag_epc}, timeout=2)
 
             if response.status_code == 200:

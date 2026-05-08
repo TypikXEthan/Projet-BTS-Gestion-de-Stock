@@ -42,6 +42,34 @@ body:not(.corps-tableau-de-bord) {
     to { opacity: 1; transform: translateY(0); }
 }
 
+.btn-tablette {
+            display: none; /* Cache le bouton sur PC */
+            width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            background-color: #6c757d; /* Couleur grise pour différencier du login */
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            box-sizing: border-box;
+            transition: background 0.3s;
+        }
+
+        .btn-tablette:hover {
+            background-color: #5a6268;
+        }
+
+        /* Affichage uniquement sur tablettes et mobiles (max 1024px) */
+        @media screen and (max-width: 1024px) {
+            .btn-tablette {
+                display: block; /* On l'affiche seulement sur tablette */
+            }
+        }
 .carte-connexion .logo {
     font-size: 24px;
     font-weight: 600;

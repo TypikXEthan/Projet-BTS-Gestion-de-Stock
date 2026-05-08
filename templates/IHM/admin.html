@@ -6,6 +6,10 @@
     <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
+        .statut-confirme { background: #3498db !important; color: white !important; } /* Bleu */
+	.statut-recupere { background: #27ae60 !important; color: white !important; } /* Vert */
+	.statut-Retard { background: #e74c3c !important; color: white !important; }   /* Rouge */
+	.statut-attente { background: #f1c40f !important; color: #333 !important; }    /* Jaune (par défaut) */
         .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; }
         .modal.active { display: flex !important; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 550px; max-height: 90vh; overflow-y: auto; color: #333; }
@@ -129,41 +133,64 @@
         </div>
     </div>
 
-    <div class="admin-card" style="margin-top:20px;">
-        <h2>Réservations en cours ({{ reservations|length }})</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Matériel</th>
-                    <th>Utilisateur</th>
-                    <th>Début</th>
-                    <th>Fin prévue</th>
-                    <th>Statut</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in reservations %}
-                <tr>
-                    <td><b>{{ r.nom_modele }}</b></td>
-                    <td>{{ r.prenom }} {{ r.nom }}</td>
-                    <td>{{ r.date_reservation }}</td>
-                    <td>{{ r.date_rendu_prevue }}</td>
-                    <td><span class="badge-statut">{{ r.statut }}</span></td>
-                    <td>
-                        <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');" style="margin:0">
-                            <input type="hidden" name="action" value="supprimer_reservation">
-                            <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-                            <button type="submit" class="btn-supprimer" style="padding: 5px 10px; width: auto; font-size: 12px;">Annuler</button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="6" style="text-align:center; opacity:0.5; padding:20px;">Aucune réservation enregistrée.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+<div class="admin-card" style="margin-top:20px;">
+    <h2>Réservations en cours ({{ reservations|length }})</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Matériel</th>
+                <th>Utilisateur</th>
+                <th>Début</th>
+                <th>Fin prévue</th>
+                <th>Statut</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for r in reservations %}
+            <tr>
+                <td><b>{{ r.nom_modele }}</b></td>
+                <td>{{ r.prenom }} {{ r.nom }}</td>
+
+                <!-- DATE DE RESERVATION -->
+                <td>{{ r.date_reservation }}</td>
+
+                <!-- ✅ CORRECTION ICI -->
+                <td>{{ r.date_limite }}</td>
+
+                 <td>
+    		     <span class="badge-statut 
+        		 {% if r.statut == 'Confirmée' %}statut-confirme
+        		 {% elif r.statut == 'Récupérée' %}statut-recupere
+        		 {% elif r.statut == 'Retard' %}statut-Retard
+        		 {% elif r.statut == 'En attente' %}statut-attente
+        		 {% endif %}">
+        		 {{ r.statut }}
+    		     </span>
+	        </td>
+                <td>
+                    <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');">
+                        <input type="hidden" name="action" value="supprimer_reservation">
+                        <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
+                        <button type="submit" class="btn-supprimer">
+                            Annuler
+                        </button>
+                    </form>
+                </td>
+            </tr>
+
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align:center; opacity:0.5; padding:20px;">
+                    Aucune réservation enregistrée.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
     <div class="admin-card" style="margin-top:20px;">
         <h2>Utilisateurs ({{ utilisateurs|length }})</h2>

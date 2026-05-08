@@ -2,9 +2,49 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Tableau de bord</title>
-<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <title>Tableau de bord - BTS RFID</title>
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        /* Styles spécifiques pour l'alerte de retard */
+        .alerte-retard {
+            background-color: #fff5f5;
+            border: 2px solid #ff4d4d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(255, 77, 77, 0.1);
+        }
+        .alerte-retard h3 {
+            color: #d32f2f;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .table-retard {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .table-retard th {
+            text-align: left;
+            color: #d32f2f;
+            border-bottom: 1px solid #ffcdd2;
+            padding: 10px;
+        }
+        .table-retard td {
+            padding: 10px;
+            color: #b71c1c;
+            font-weight: 600;
+        }
+        .alerte-footer {
+            margin-top: 15px;
+            font-size: 0.9em;
+            font-style: italic;
+            color: #7f0000;
+        }
+    </style>
 </head>
 <body class="corps-tableau-de-bord">
 
@@ -19,7 +59,7 @@
     <a href="/reservations">Réservations</a>
     <a href="/profil">Mon Profil</a>
 
-{% if session["admin"] == 1 %}
+    {% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
     {% endif %}
     <a href="/logout" class="deconnexion">Déconnexion</a>
@@ -46,6 +86,33 @@
         </div>
     </header>
 
+    {% if mes_retards %}
+    <div class="alerte-retard">
+        <h3>ATTENTION : Vous avez des retards de restitution</h3>
+        <table class="table-retard">
+            <thead>
+                <tr>
+                    <th>ID Matériel</th>
+                    <th>Modèle</th>
+                    <th>Date limite prévue</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in mes_retards %}
+                <tr>
+                    <td>#{{ r.id_materiel }}</td>
+                    <td>{{ r.nom_modele }}</td>
+                    <td>{{ r.date_limite }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="alerte-footer">
+            Merci de rapporter ces équipements au local de stockage dans les plus brefs délais.
+        </p>
+    </div>
+    {% endif %}
+
     <div class="statistiques">
         <div class="carte bleu">
             <h3>Matériels disponibles</h3>
@@ -59,7 +126,7 @@
     </div>
 
     <div class="conteneur-tableau">
-        <h3>Derniers mouvements</h3>
+        <h3>Derniers mouvements (Global)</h3>
 
         <table>
             <thead>
@@ -67,7 +134,7 @@
                     <th>Matériel</th>
                     <th>Utilisateur</th>
                     <th>Mouvement</th>
-                    <th>Date</th>
+                    <th>Date / Heure</th>
                 </tr>
             </thead>
             <tbody>
@@ -75,7 +142,11 @@
                 <tr>
                     <td>{{ m.nom_modele }}</td>
                     <td>{{ m.prenom }} {{ m.nom }}</td>
-                    <td>{{ m.type_mouvement }}</td>
+                    <td>
+                        <span class="badge {{ 'badge-entree' if m.type_mouvement == 'Entrée' else 'badge-sortie' }}">
+                            {{ m.type_mouvement }}
+                        </span>
+                    </td>
                     <td>{{ m.date_heure }}</td>
                 </tr>
                 {% endfor %}
@@ -83,7 +154,7 @@
         </table>
 
         {% if not mouvements %}
-        <p>Aucun mouvement récent.</p>
+        <p>Aucun mouvement récent enregistré.</p>
         {% endif %}
     </div>
 
@@ -93,13 +164,13 @@
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
 
-    // Toggle au clic
+    // Toggle du menu utilisateur
     userBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         userDropdown.classList.toggle('show');
     });
 
-    // Fermer si on clique ailleurs sur la page
+    // Fermer le menu si clic à l'extérieur
     window.addEventListener('click', () => {
         if (userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');

@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <title>Annuaire Utilisateurs</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
-<link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
-
+    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
 </head>
 
 <body class="corps-tableau-de-bord">
@@ -58,14 +57,13 @@
                 <tr>
                     <th>Nom</th>
                     <th>Prénom</th>
-                    <th>Identifiant</th>
                     <th>Rôle</th>
                     <th>Matériels empruntés</th>
                 </tr>
             </thead>
             <tbody>
                 {% for u in utilisateurs %}
-                <tr class="ligne-profil" onclick="window.location='/profil/{{ u.id_utilisateur }}'">
+<tr class="ligne-profil" onclick="window.location='{{ url_for('voir_profil_public', id_user_vise=u.id_utilisateur) }}'">
                     <td>
                         <strong>{{ u.nom }}</strong> 
                         {% if u.id_utilisateur == session['id_user'] %}
@@ -73,7 +71,6 @@
                         {% endif %}
                     </td>
                     <td>{{ u.prenom }}</td>
-                    <td><code>{{ u.utilisateur }}</code></td>
                     <td><span class="badge-user">{{ u.role }}</span></td>
                     <td>
                         {% if u.nb_emprunts > 0 %}
