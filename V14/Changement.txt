@@ -1,3 +1,0 @@
-Fonctionnement avec le nouveau vps 
-/Erreur niveau de flux_materiel l'envoye de l'information ne fonctionne pas car il passe par apache et apache ne sais pas quoi en faire 
-A regler plus tard / soucis niveau reservation quelque bug a regler plus tard 
