@@ -88,6 +88,7 @@
 
     function resetInactivityTimer() {
         clearTimeout(inactivityTimer);
+        // Redirection après 10 min d'inactivité
         inactivityTimer = setTimeout(() => { window.location.href = "/tablette"; }, 600000);
     }
     resetInactivityTimer();
@@ -190,3 +191,4 @@
 </script>
 </body>
 </html>
+socketio.run(app, host="0.0.0.0", port=5000, debug=True)
