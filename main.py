@@ -84,7 +84,7 @@ def verifier_retards_automatique():
 # On récupère la clé du .env ou on met une valeur de secours
 app.secret_key = os.getenv('SECRET_KEY', 'cle_par_defaut_pas_secure')
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 session_scan = {}
 
 def get_db():
@@ -175,7 +175,7 @@ def login():
 
 # -------------------------------
 # DASHBOARD
-# -------------------------------
+#-------------------------------
 @app.route("/dashboard")
 def dashboard():
     if "id_user" not in session:
@@ -183,34 +183,51 @@ def dashboard():
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
+    id_u = session["id_user"]
 
-    # 1. Matériels disponibles
+    # 1. Stats globales
     cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE etat = 'Disponible'")
     nb_stock = cursor.fetchone()["total"]
-
-    # 2. Matériels sortis
     cursor.execute("SELECT COUNT(*) AS total FROM materiel_stock WHERE etat = 'Sortie'")
     nb_sorti = cursor.fetchone()["total"]
 
-    # 3. NOUVEAU : Récupérer les retards spécifiques à cet utilisateur
+    # 2. Retards (déjà existant)
     cursor.execute("""
         SELECT r.id_materiel, ms.nom_modele, r.date_limite
         FROM reservations r
         JOIN materiel_stock ms ON r.id_materiel = ms.id_materiel
         WHERE r.id_utilisateur = %s AND r.statut = 'Retard'
-    """, (session["id_user"],))
+    """, (id_u,))
     mes_retards = cursor.fetchall()
 
-    # 4. Derniers mouvements (limite 10)
+    # 3. NOUVEAU : Mes matériels actuels + Alertes de réservations futures
     cursor.execute("""
-        SELECT m.type_mouvement, m.date_heure,
-               ms.nom_modele,
-               u.nom, u.prenom
+        SELECT ms.id_materiel, ms.nom_modele, 
+               (SELECT r.date_reservation 
+                FROM reservations r 
+                WHERE r.id_materiel = ms.id_materiel 
+                AND r.statut = 'Confirmée' 
+                AND r.date_reservation > NOW() 
+                ORDER BY r.date_reservation ASC LIMIT 1) as date_prochaine_resa,
+               (SELECT u.utilisateur 
+                FROM reservations r 
+                JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
+                WHERE r.id_materiel = ms.id_materiel 
+                AND r.statut = 'Confirmée' 
+                AND r.date_reservation > NOW() 
+                ORDER BY r.date_reservation ASC LIMIT 1) as nom_prochain_user
+        FROM materiel_stock ms
+        WHERE ms.id_utilisateur_actuel = %s
+    """, (id_u,))
+    mes_emprunts = cursor.fetchall()
+
+    # 4. Derniers mouvements
+    cursor.execute("""
+        SELECT m.type_mouvement, m.date_heure, ms.nom_modele, u.nom, u.prenom
         FROM mouvements m
         JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
         JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
-        ORDER BY m.date_heure DESC
-        LIMIT 10
+        ORDER BY m.date_heure DESC LIMIT 10
     """)
     mouvements = cursor.fetchall()
 
@@ -222,11 +239,11 @@ def dashboard():
         nb_stock=nb_stock,
         nb_sorti=nb_sorti,
         mouvements=mouvements,
-        mes_retards=mes_retards, # On envoie la liste des retards au HTML
+        mes_retards=mes_retards,
+        mes_emprunts=mes_emprunts, # <--- Ajouté
         nom=session["nom"],
         prenom=session["prenom"]
     )
-
 
 # -------------------------------
 # MATERIELS
@@ -869,14 +886,11 @@ def historique_access_page():
     if 'id_user' not in session:
         return redirect(url_for('login'))
 
-    # Récupération de la recherche
     recherche = request.args.get('recherche', '').strip()
-
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    
-    # On utilise des LEFT JOIN pour ne pas perdre les "Inconnus" (id_utilisateur IS NULL)
+    # On récupère les logs, pas besoin de filtrer la porte en SQL si elle est unique
     sql = """
         SELECT h.*, u.nom, u.prenom 
         FROM historique_acces h
@@ -885,20 +899,25 @@ def historique_access_page():
 
     params = []
     if recherche:
+        # On a enlevé la recherche sur h.id_porte_physique car la colonne disparait
         sql += """ 
             WHERE u.nom LIKE %s 
             OR u.prenom LIKE %s 
-            OR h.id_porte_physique LIKE %s 
             OR h.statut_acces LIKE %s
         """
         search_val = f"%{recherche}%"
-        params = [search_val, search_val, search_val, search_val]
+        params = [search_val, search_val, search_val]
 
-    # 3. Trier par les plus récents
     sql += " ORDER BY h.date_acces DESC, h.heure_acces DESC LIMIT 100"
     
     cursor.execute(sql, params)
     logs = cursor.fetchall()
+
+    for log in logs:
+        if log['statut_acces']:
+            log['statut_clean'] = log['statut_acces'].strip().upper()
+        else:
+            log['statut_clean'] = ""
     
     cursor.close()
     db.close()
@@ -908,7 +927,7 @@ def historique_access_page():
         logs=logs, 
         nom=session.get("nom"), 
         prenom=session.get("prenom"),
-        recherche=recherche  # On renvoie la recherche pour qu'elle reste dans l'input
+        recherche=recherche
     )
 
 @app.route("/reservation_materiel_liste/<int:id_mat>")
@@ -1033,12 +1052,15 @@ def verifier_acces():
     finally:
         cursor.close()
         db.close()
+
 @app.route("/tablette/flux_materiel")
 def flux_materiel():
+    """Affiche l'interface de scan pour la tablette."""
     return render_template("Ecran/flux_materiel.html")
 
 @app.route("/scan_objet", methods=['POST'])
 def scan_objet():
+    """Réceptionne un tag RFID et l'envoie en temps réel à la tablette via Socket.IO."""
     global session_scan
     data = request.json
     tag_epc = data.get('rfid_tag_epc')
@@ -1049,54 +1071,55 @@ def scan_objet():
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
-        # 1. On récupère les infos du matériel
+        # 1. On récupère les infos du matériel en BDD
         cursor.execute("SELECT id_materiel, nom_modele, etat FROM materiel_stock WHERE rfid_tag_epc = %s", (tag_epc,))
         item = cursor.fetchone()
         
-        if item:
-            # 2. Vérification d'une réservation future pour prévenir l'utilisateur
-            cursor.execute("""
-                SELECT date_reservation FROM reservations 
-                WHERE id_materiel = %s AND statut = 'Confirmée' 
-                AND date_reservation > NOW()
-                ORDER BY date_reservation ASC LIMIT 1
-            """, (item['id_materiel'],))
-            prochaine = cursor.fetchone()
-            
-            note_retour = ""
-            if prochaine and prochaine['date_reservation']:
-                # Formatage propre de la date pour l'affichage tablette
-                date_formatee = prochaine['date_reservation'].strftime('%d/%m %H:%M')
-                note_retour = f"Retour impératif avant : {date_formatee}"
+        if not item:
+            return jsonify({"status": "not_found", "message": "Objet inconnu"}), 404
 
-            # 3. Logique de bascule d'état (Disponible <-> Sortie)
-            if tag_epc in session_scan:
-                # Si déjà scanné dans cette session, on inverse l'état actuel de la session
-                nouveau = "Disponible" if session_scan[tag_epc]['etat'] == "Sortie" else "Sortie"
-                session_scan[tag_epc]['etat'] = nouveau
-            else:
-                # Premier scan : on inverse l'état réel stocké en BDD
-                etat_bdd = str(item['etat']).strip().capitalize()
-                nouveau = "Sortie" if etat_bdd == "Disponible" else "Disponible"
-                
-                session_scan[tag_epc] = {
-                    'id': item['id_materiel'],
-                    'nom': item['nom_modele'],
-                    'etat': nouveau,
-                    'info_reservation': note_retour
-                }
-            
-            # 4. Envoi à la tablette via SocketIO
-            socketio.emit('mouvement_stock', {
-                'id': tag_epc,
+        id_m = item['id_materiel']
+        note_retour = ""
+
+        # 2. Recherche de la prochaine réservation
+        cursor.execute("""
+            SELECT r.date_reservation, u.utilisateur 
+            FROM reservations r
+            JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
+            WHERE r.id_materiel = %s 
+            AND r.statut = 'Confirmée' 
+            AND r.date_reservation >= CURDATE()
+            ORDER BY r.date_reservation ASC LIMIT 1
+        """, (id_m,))
+        prochaine = cursor.fetchone()
+
+        if prochaine:
+            date_f = prochaine['date_reservation'].strftime('%d/%m à %H:%M')
+            note_retour = f"À rendre avant le {date_f} (Réservé par {prochaine['utilisateur']})"
+
+        # 3. Logique de session (Bascule Disponible <-> Sortie)
+        if tag_epc in session_scan:
+            nouveau = "Disponible" if session_scan[tag_epc]['etat'] == "Sortie" else "Sortie"
+            session_scan[tag_epc]['etat'] = nouveau
+        else:
+            etat_bdd = str(item['etat']).strip().capitalize()
+            nouveau = "Sortie" if etat_bdd == "Disponible" else "Disponible"
+            session_scan[tag_epc] = {
+                'id': id_m,
                 'nom': item['nom_modele'],
-                'etat': session_scan[tag_epc]['etat'],
-                'message': note_retour 
-            })
-            
-            return jsonify({"status": "ok"}), 200
-            
-        return jsonify({"status": "not_found", "message": "Objet inconnu"}), 404
+                'etat': nouveau,
+                'info_reservation': note_retour
+            }
+        
+        # 4. Envoi à la tablette via SocketIO (Le "Push" temps réel)
+        socketio.emit('mouvement_stock', {
+            'id': tag_epc,
+            'nom': item['nom_modele'],
+            'etat': session_scan[tag_epc]['etat'],
+            'message': note_retour 
+        })
+        
+        return jsonify({"status": "ok"}), 200
 
     except Exception as e:
         print(f"Erreur scan_objet: {e}")
@@ -1107,14 +1130,22 @@ def scan_objet():
 
 @app.route("/supprimer_de_session", methods=['POST'])
 def supprimer_de_session():
+    """Supprime un objet de la liste temporaire (Rectification)."""
     global session_scan
-    tag_epc = request.json.get('rfid_tag_epc')
+    data = request.json
+    tag_epc = data.get('rfid_tag_epc')
+    
     if tag_epc in session_scan:
         del session_scan[tag_epc]
-    return jsonify({"status": "ok"})
+        # On informe la tablette pour qu'elle retire l'élément visuellement
+        socketio.emit('suppression_tag', {'id': tag_epc})
+        return jsonify({"status": "ok"})
+    
+    return jsonify({"status": "error", "message": "Tag non trouvé"}), 404
 
 @app.route("/valider_session_finale", methods=['POST'])
 def valider_session_finale():
+    """Valide les mouvements en BDD avec authentification."""
     global session_scan
     data = request.json
     user_login = data.get('user')
@@ -1130,6 +1161,7 @@ def valider_session_finale():
     cursor = db.cursor(dictionary=True)
     
     try:
+        # 1. Vérification de l'utilisateur
         cursor.execute("SELECT id_utilisateur FROM utilisateurs WHERE utilisateur=%s AND mot_de_passe=%s", (user_login, mdp_hash))
         valideur = cursor.fetchone()
         if not valideur:
@@ -1143,23 +1175,30 @@ def valider_session_finale():
                 id_m = infos['id']
 
                 if infos['etat'] == "Sortie":
-                    # --- LOGIQUE RÉSERVATION FUTURE ---
+                    # Vérification si réservé par quelqu'un d'autre aujourd'hui
                     cursor.execute("""
-                        SELECT date_reservation FROM reservations 
-                        WHERE id_materiel = %s AND statut = 'Confirmée' AND date_reservation > NOW()
-                        ORDER BY date_reservation ASC LIMIT 1
+                        SELECT r.id_utilisateur, u.utilisateur 
+                        FROM reservations r
+                        JOIN utilisateurs u ON r.id_utilisateur = u.id_utilisateur
+                        WHERE r.id_materiel = %s AND r.statut = 'Confirmée'
+                        AND DATE(r.date_reservation) <= CURDATE()
                     """, (id_m,))
-                    prochaine = cursor.fetchone()
-                    
-                    # Date limite par défaut (ex: +2 jours) ou date de la prochaine réservation
-                    from datetime import timedelta
-                    date_limite = prochaine['date_reservation'] if prochaine else (datetime.now() + timedelta(days=2))
+                    res = cursor.fetchone()
 
-                    # 1. Mettre à jour le stock
+                    if res and res['id_utilisateur'] != id_u:
+                        return jsonify({
+                            "status": "error", 
+                            "message": f"Le matériel {infos['nom']} est réservé par {res['utilisateur']}."
+                        }), 403
+
+                    # Calcul de la date limite de retour
+                    from datetime import datetime, timedelta
+                    cursor.execute("SELECT date_reservation FROM reservations WHERE id_materiel=%s AND statut='Confirmée' AND date_reservation > NOW() ORDER BY date_reservation ASC LIMIT 1", (id_m,))
+                    prochaine_res = cursor.fetchone()
+                    date_limite = prochaine_res['date_reservation'] if prochaine_res else (datetime.now() + timedelta(days=2))
+
+                    # Mise à jour Stock et Réservations
                     cursor.execute("UPDATE materiel_stock SET etat='Sortie', id_utilisateur_actuel=%s WHERE id_materiel=%s", (id_u, id_m))
-                    
-                    # 2. Créer ou mettre à jour la ligne de réservation
-                    # On vérifie si l'utilisateur avait déjà réservé pour maintenant
                     cursor.execute("""
                         UPDATE reservations SET statut='Récupérée', date_limite=%s 
                         WHERE id_materiel=%s AND id_utilisateur=%s AND statut='Confirmée' 
@@ -1167,21 +1206,15 @@ def valider_session_finale():
                     """, (date_limite, id_m, id_u))
                     
                     if cursor.rowcount == 0:
-                        # Emprunt immédiat sans réservation préalable
-                        cursor.execute("""
-                            INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_limite, statut)
-                            VALUES (%s, %s, NOW(), %s, 'Récupérée')
-                        """, (id_m, id_u, date_limite))
+                        cursor.execute("INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_limite, statut) VALUES (%s, %s, NOW(), %s, 'Récupérée')", (id_m, id_u, date_limite))
 
-                else: # Cas de l'ENTRÉE (Disponible)
+                else: # Cas du RETOUR (Entrée)
                     cursor.execute("UPDATE materiel_stock SET etat='Disponible', id_utilisateur_actuel=NULL WHERE id_materiel=%s", (id_m,))
                     cursor.execute("UPDATE reservations SET statut='Rendu' WHERE id_materiel=%s AND statut IN ('Récupérée', 'Retard')", (id_m,))
 
-                # Historique mouvements
-                cursor.execute("""
-                    INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure)
-                    VALUES (%s, %s, %s, NOW())
-                """, (id_m, id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
+                # Historique
+                cursor.execute("INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure) VALUES (%s, %s, %s, NOW())", 
+                               (id_m, id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
                 
                 del session_scan[tag]
 
@@ -1190,12 +1223,14 @@ def valider_session_finale():
 
     except Exception as e:
         db.rollback()
+        print(f"Erreur validation: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         cursor.close()
         db.close()
 
-#RETARD
+# --- RELANCE RETARDS (ADMIN) ---
+
 @app.route("/relancer_retard/<int:id_res>")
 def relancer_retard(id_res):
     if "id_user" not in session or session.get("admin") != 1:
@@ -1204,9 +1239,7 @@ def relancer_retard(id_res):
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
     try:
-        # CORRECTION : date_limite au lieu de date_rendu_prevue
         cursor.execute("""
             SELECT u.email, u.prenom, m.nom_modele, r.date_limite
             FROM reservations r
@@ -1220,36 +1253,48 @@ def relancer_retard(id_res):
             msg = Message(
                 subject="[RAPPEL] Matériel non rendu - BTS RFID",
                 recipients=[info['email']],
-                # CORRECTION : info['date_limite']
-                body=f"Bonjour {info['prenom']},\n\nSauf erreur de notre part, vous n'avez pas encore rendu le matériel suivant : {info['nom_modele']}.\n\nLe retour était prévu pour le : {info['date_limite']}.\n\nMerci de bien vouloir le rapporter au bureau de gestion dans les plus brefs délais.\n\nCordialement,\nL'administration."
+                body=f"Bonjour {info['prenom']},\n\nSauf erreur de notre part, vous n'avez pas encore rendu le matériel suivant : {info['nom_modele']}.\n\nLe retour était prévu pour le : {info['date_limite']}.\n\nMerci de bien vouloir le rapporter rapidement.\n\nCordialement,\nL'administration."
             )
             mail.send(msg)
-            flash(f"L'email de relance a été envoyé avec succès à {info['email']}.", "success")
+            flash(f"Email envoyé à {info['email']}.", "success")
         else:
-            flash("Erreur : Impossible de trouver l'email de l'utilisateur.", "danger")
+            flash("Erreur : Email introuvable.", "danger")
     except Exception as e:
-        print(f"Erreur relance : {e}")
         flash("Erreur lors de l'envoi de l'email.", "danger")
     finally:
         db.close()
+    return redirect(url_for('admin'))
 
-    return redirect(url_for('admin')) # Redirige vers admin, c'est plus logique
+# --- LOGOUT ---
 
-# -------------------------------
-# LOGOUT
-# -------------------------------
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/")
 
-# -------------------------------
-# MAIN
-# -------------------------------
+# --- BLOC DE LANCEMENT ---
+
 if __name__ == "__main__":
-    # On vérifie si le scheduler n'est pas déjà lancé (évite les doublons en mode debug)
+    # 1. Lancement du planificateur pour les relances automatiques
     if not scheduler.running:
-        scheduler.add_job(id='job_retards', func=verifier_retards_automatique, trigger='interval', seconds=30)
+        # On vérifie les retards toutes les 30 minutes
+        scheduler.add_job(
+            id='job_retards', 
+            func=verifier_retards_automatique, 
+            trigger='interval', 
+            minutes=30
+        )
         scheduler.start()
+        print("✅ Scheduler démarré (vérification des retards toutes les 30 min)")
+
+    # 2. LANCEMENT DU SERVEUR AVEC SOCKET.IO
+    # On utilise le port 5000 comme configuré dans ton Apache SSL
+    print("🚀 Serveur Flask-SocketIO lancé sur le port 5000...")
     
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    socketio.run(
+        app, 
+        host="0.0.0.0", 
+        port=5000, 
+        debug=True, 
+        allow_unsafe_werkzeug=True
+    )

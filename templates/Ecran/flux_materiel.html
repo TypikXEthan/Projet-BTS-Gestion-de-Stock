@@ -1,3 +1,8 @@
+Pour que ton Flux Matériel fonctionne sur ton domaine HTTPS (lavoisierlocal.online), le problème principal est que le navigateur bloque la connexion Socket.IO s'il n'est pas configuré pour utiliser le port sécurisé du site.
+
+Voici le code complet et corrigé de ton fichier Ecran/flux_materiel.html, ligne par ligne, avec la correction de la connexion Socket.IO intégrée.
+
+HTML
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -14,7 +19,7 @@
         .scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
         input[type="checkbox"] { cursor: pointer; }
     </style>
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
 </head>
 <body class="overflow-hidden bg-black text-white font-sans">
 
@@ -42,7 +47,7 @@
     </main>
 
     <footer class="actions-bar fixed bottom-0 w-full p-6 flex justify-center gap-4 bg-black/30 backdrop-blur-md border-t border-white/5">
-        <a href="http://172.29.241.141:5000/" class="bg-blue-600 text-white px-8 py-4 rounded-xl font-bold uppercase text-xs hover:bg-blue-500 transition-all shadow-lg flex items-center">IHM CONFIG</a>
+        <a href="/" class="bg-blue-600 text-white px-8 py-4 rounded-xl font-bold uppercase text-xs hover:bg-blue-500 transition-all shadow-lg flex items-center">ACCUEIL SITE</a>
         <button onclick="openModal('modal-rectif')" class="bg-white/10 text-white px-8 py-4 rounded-xl font-bold uppercase text-xs border border-white/10 hover:bg-white/20">RECTIFICATIONS</button>
         <button onclick="ouvrirPopupValidation()" class="bg-red-600 text-white px-10 py-4 rounded-xl font-black uppercase text-sm shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all">
             TERMINER LA SESSION
@@ -83,17 +88,24 @@
     </div>
 
 <script>
-    const socket = io();
+    // --- CORRECTION CONNEXION SOCKET ---
+    // On force la connexion sur le même domaine et port que le site (HTTPS)
+    const socket = io("https://lavoisierlocal.online", {
+        transports: ["websocket", "polling"],
+        secure: true
+    });
+
     let inactivityTimer;
 
     function resetInactivityTimer() {
         clearTimeout(inactivityTimer);
-        // Redirection après 10 min d'inactivité
         inactivityTimer = setTimeout(() => { window.location.href = "/tablette"; }, 600000);
     }
     resetInactivityTimer();
 
+    // Réception d'un scan RFID en temps réel
     socket.on('mouvement_stock', (data) => {
+        console.log("Nouveau scan reçu:", data); // Pour debug console
         resetInactivityTimer();
         const old = document.getElementById(`item-${data.id}`);
         if (old) old.remove();
@@ -108,7 +120,6 @@
         card.setAttribute('data-nom', data.nom);
         card.setAttribute('data-etat', data.etat);
 
-        // --- AJOUT DU MESSAGE D'ALERTE ---
         let alertHTML = data.message ? `<div class="mt-2 py-1 px-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-[11px] text-orange-400 font-bold">⚠️ ${data.message}</div>` : '';
 
         card.innerHTML = `
@@ -125,9 +136,63 @@
         updateCounts();
     });
 
+    // Suppression d'un tag (si annulé via rectification)
+    socket.on('suppression_tag', (data) => {
+        const el = document.getElementById(`item-${data.id}`);
+        if (el) el.remove();
+        updateCounts();
+    });
+
     function updateCounts() {
         document.getElementById('count-entree').innerText = document.getElementById('liste-entree').children.length;
         document.getElementById('count-sortie').innerText = document.getElementById('liste-sortie').children.length;
+    }
+
+    function openModal(id) { 
+        if (id === 'modal-rectif') {
+            const container = document.getElementById('edit-list-container');
+            container.innerHTML = ''; 
+            const items = document.querySelectorAll('.item-scan');
+            
+            if (items.length === 0) {
+                container.innerHTML = '<p class="text-center opacity-50 italic py-10 text-xs">Aucun scan à rectifier.</p>';
+            }
+
+            items.forEach(item => {
+                const tag = item.getAttribute('data-tag');
+                const nom = item.getAttribute('data-nom');
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl";
+                div.innerHTML = `
+                    <div class="flex flex-col">
+                        <span class="font-bold text-sm">${nom}</span>
+                        <span class="text-[9px] opacity-50 font-mono uppercase">${tag}</span>
+                    </div>
+                    <button onclick="supprimerTag('${tag}')" class="px-4 py-2 bg-red-600/20 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-all font-bold text-[10px]">SUPPRIMER</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+        document.getElementById(id).classList.remove('hidden'); 
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function supprimerTag(tag) {
+        fetch('/supprimer_de_session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ rfid_tag_epc: tag })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                const el = document.getElementById(`item-${tag}`);
+                if (el) el.remove();
+                updateCounts();
+                openModal('modal-rectif'); 
+            }
+        });
     }
 
     function ouvrirPopupValidation() {
@@ -143,7 +208,13 @@
                 const etat = item.getAttribute('data-etat');
                 const div = document.createElement('div');
                 div.className = "flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5";
-                div.innerHTML = `<div class="flex items-center gap-3"><input type="checkbox" checked class="check-final w-5 h-5 accent-red-500" value="${tag}"><span class="text-sm font-bold">${nom}</span></div><span class="text-[9px] font-black uppercase ${etat === 'Disponible' ? 'text-green-400' : 'text-red-400'}">${etat}</span>`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" checked class="check-final w-5 h-5 accent-red-500" value="${tag}">
+                        <span class="text-sm font-bold">${nom}</span>
+                    </div>
+                    <span class="text-[9px] font-black uppercase ${etat === 'Disponible' ? 'text-green-400' : 'text-red-400'}">${etat}</span>
+                `;
                 recap.appendChild(div);
             });
         }
@@ -163,17 +234,16 @@
         .then(res => res.json())
         .then(data => {
             if(data.status === 'ok') {
-                tags.forEach(tag => {
-                    const el = document.getElementById(`item-${tag}`);
-                    if (el) el.remove();
-                });
+                document.getElementById('liste-entree').innerHTML = '';
+                document.getElementById('liste-sortie').innerHTML = '';
                 updateCounts();
                 closeModal('modal-validation');
                 openModal('modal-question');
             } else {
                 alert("❌ Erreur : " + data.message);
             }
-        });
+        })
+        .catch(err => console.error("Erreur Fetch:", err));
     }
 
     function reponseQuestion(encoreQuelquun) {
@@ -185,10 +255,6 @@
             window.location.href = "/tablette"; 
         }
     }
-
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 </script>
 </body>
 </html>
-socketio.run(app, host="0.0.0.0", port=5000, debug=True)

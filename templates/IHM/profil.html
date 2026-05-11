@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Mon Profil - RFID</title>
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
         /* Styles spécifiques pour la modale profil */
@@ -117,7 +117,7 @@
 
         <div class="profil-details">
             <div class="admin-card">
-                <h2 class="titre-section-vert">📦 Matériel en ma possession</h2>
+                <h2 class="titre-section-vert"> Matériel en ma possession</h2>
                 {% if possedes %}
                 <table>
                     <thead>
@@ -139,7 +139,7 @@
             </div>
 
             <div class="admin-card">
-                <h2 class="titre-section-bleu">📅 Mes Réservations</h2>
+                <h2 class="titre-section-bleu"> Mes Réservations</h2>
                 {% if reservations %}
                 <table>
                     <thead>

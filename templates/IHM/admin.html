@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Administration - Système RFID</title>
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
         .statut-confirme { background: #3498db !important; color: white !important; } /* Bleu */
@@ -72,7 +72,7 @@
 
     <div class="horaires-panel">
         <div>
-            <h3 style="margin:0">🕒 Horaires d'accès</h3>
+            <h3 style="margin:0"> Horaires d'accès</h3>
             <p style="margin:5px 0 0 0">Actuel : <b>{{ horaires.debut }}</b> à <b>{{ horaires.fin }}</b></p>
         </div>
         <form method="POST" style="display:flex; gap:10px; align-items: flex-end;">

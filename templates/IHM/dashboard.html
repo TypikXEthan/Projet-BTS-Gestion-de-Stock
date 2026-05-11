@@ -2,11 +2,12 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tableau de bord - BTS RFID</title>
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
-        /* Styles spécifiques pour l'alerte de retard */
+        /* Styles pour les alertes de retard */
         .alerte-retard {
             background-color: #fff5f5;
             border: 2px solid #ff4d4d;
@@ -22,28 +23,49 @@
             align-items: center;
             gap: 10px;
         }
-        .table-retard {
+
+        /* Styles pour les alertes de réservation future (Le nouveau truc) */
+        .alerte-reservation {
+            background: #fff9db;
+            border-left: 4px solid #fab005;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85em;
+            color: #856404;
+            font-weight: 500;
+        }
+
+        .badge-emprunt {
+            background: #e7f5ff;
+            color: #1971c2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.8em;
+        }
+
+        .table-retard, .table-classique {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
         }
-        .table-retard th {
+        
+        .table-retard th, .table-classique th {
             text-align: left;
-            color: #d32f2f;
-            border-bottom: 1px solid #ffcdd2;
-            padding: 10px;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
         }
-        .table-retard td {
-            padding: 10px;
-            color: #b71c1c;
-            font-weight: 600;
+
+        .table-retard td, .table-classique td {
+            padding: 12px;
+            border-bottom: 1px solid #f9f9f9;
         }
-        .alerte-footer {
-            margin-top: 15px;
-            font-size: 0.9em;
-            font-style: italic;
-            color: #7f0000;
-        }
+
+        .text-orange { color: #f59f00; }
+        .font-bold { font-weight: bold; }
     </style>
 </head>
 <body class="corps-tableau-de-bord">
@@ -88,13 +110,13 @@
 
     {% if mes_retards %}
     <div class="alerte-retard">
-        <h3>ATTENTION : Vous avez des retards de restitution</h3>
+        <h3> ATTENTION : Retards de restitution</h3>
         <table class="table-retard">
             <thead>
                 <tr>
-                    <th>ID Matériel</th>
+                    <th>ID</th>
                     <th>Modèle</th>
-                    <th>Date limite prévue</th>
+                    <th>Date limite</th>
                 </tr>
             </thead>
             <tbody>
@@ -102,33 +124,67 @@
                 <tr>
                     <td>#{{ r.id_materiel }}</td>
                     <td>{{ r.nom_modele }}</td>
-                    <td>{{ r.date_limite }}</td>
+                    <td><b>{{ r.date_limite }}</b></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        <p class="alerte-footer">
-            Merci de rapporter ces équipements au local de stockage dans les plus brefs délais.
-        </p>
     </div>
     {% endif %}
 
     <div class="statistiques">
         <div class="carte bleu">
-            <h3>Matériels disponibles</h3>
+            <h3>Disponibles</h3>
             <p>{{ nb_stock }}</p>
         </div>
-
         <div class="carte bleu-clair">
-            <h3>Matériels sortis</h3>
+            <h3>Sortis</h3>
             <p>{{ nb_sorti }}</p>
         </div>
     </div>
 
+    <div class="conteneur-tableau" style="margin-bottom: 30px; border-top: 4px solid #3b82f6;">
+        <h3 style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.2em;"></span> Mes matériels en possession
+        </h3>
+        
+        <table class="table-classique">
+            <thead>
+                <tr>
+                    <th>Matériel</th>
+                    <th>Statut</th>
+                    <th>Note de restitution</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in mes_emprunts %}
+                <tr>
+                    <td><span class="badge-emprunt">#{{ e.id_materiel }}</span> <b>{{ e.nom_modele }}</b></td>
+                    <td><span class="badge badge-sortie">En main</span></td>
+                    <td>
+                        {% if e.date_prochaine_resa %}
+                        <div class="alerte-reservation">
+                            <span>⚠️ Attendu par <b>{{ e.nom_prochain_user }}</b> le {{ e.date_prochaine_resa.strftime('%d/%m') }}</span>
+                        </div>
+                        {% else %}
+                        <span style="opacity: 0.4; font-size: 0.85em;">Pas de réservation après vous</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if not mes_emprunts %}
+        <p style="padding: 30px; text-align: center; opacity: 0.5; font-style: italic;">
+            Vous n'avez aucun matériel en votre possession actuellement.
+        </p>
+        {% endif %}
+    </div>
+
     <div class="conteneur-tableau">
         <h3>Derniers mouvements (Global)</h3>
-
-        <table>
+        <table class="table-classique">
             <thead>
                 <tr>
                     <th>Matériel</th>
@@ -152,10 +208,6 @@
                 {% endfor %}
             </tbody>
         </table>
-
-        {% if not mouvements %}
-        <p>Aucun mouvement récent enregistré.</p>
-        {% endif %}
     </div>
 
 </div>
@@ -164,13 +216,11 @@
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
 
-    // Toggle du menu utilisateur
     userBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         userDropdown.classList.toggle('show');
     });
 
-    // Fermer le menu si clic à l'extérieur
     window.addEventListener('click', () => {
         if (userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');

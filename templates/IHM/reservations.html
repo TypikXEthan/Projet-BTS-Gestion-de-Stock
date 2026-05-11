@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Réservations - RFID</title>
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
         .alert { padding: 15px; margin-bottom: 20px; border-radius: 5px; color: white; font-weight: bold; }
@@ -128,16 +128,16 @@
                         
                         {% elif r.statut == 'Récupérée' %}
                             {% if r.date_limite < aujourdhui %}
-                                <span class="badge-status badge-rouge">⚠️ En retard</span>
+                                <span class="badge-status badge-rouge"> En retard</span>
                             {% else %}
-                                <span class="badge-status badge-vert">🧤 En possession</span>
+                                <span class="badge-status badge-vert"> En possession</span>
                             {% endif %}
                         
                         {% elif r.statut == 'Retard' %}
-                            <span class="badge-status badge-rouge">🚨 Retard</span>
+                            <span class="badge-status badge-rouge"> Retard</span>
 
                         {% elif r.statut == 'Terminée' or r.statut == 'Rendu' %}
-                            <span class="badge-status badge-gris">✅ Rendu</span>
+                            <span class="badge-status badge-gris"> Rendu</span>
                         
                         {% elif r.statut == 'Annulée' %}
                             <span class="badge-status" style="background:#bbb;">Annulée</span>
