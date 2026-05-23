@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Historique des mouvements</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
 </head>
 
 <body class="corps-tableau-de-bord">
@@ -12,7 +12,7 @@
     <h2>RFID</h2>
     <a href="/dashboard">Tableau de bord</a>
     <a href="/materiels">Matériels</a>
-    <a href="/historique"class="actif">Historique Matériels</a>
+    <a href="/historique" class="actif">Historique Matériels</a>
     <a href="/historique_acces">Journal d'accès</a>
     <a href="/utilisateurs">Utilisateurs</a>
     <a href="/reservations">Réservations</a>
@@ -46,10 +46,6 @@
         </div>
     </header>
 
-
-    </header>
-
-	<!--Barre de recherche-->
     <form method="get" style="margin-bottom: 20px;">
         <input type="text" name="recherche" placeholder="Rechercher matériel, utilisateur ou date" value="{{ recherche }}" style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ccc;">
         <button type="submit" style="padding: 10px 20px; border-radius: 8px; border: none; background-color: #34495e; color: white; cursor: pointer;">Rechercher</button>
@@ -58,7 +54,7 @@
     <div class="conteneur-tableau">
         <table>
             <tr>
-                <th>Matériel</th>
+                <th>ID Matériel</th> <th>Matériel</th>
                 <th>Utilisateur</th>
                 <th>Mouvement</th>
                 <th>Date</th>
@@ -66,7 +62,7 @@
 
             {% for m in mouvements %}
             <tr>
-                <td>{{ m.nom_modele }}</td>
+                <td><strong>#{{ m.id_materiel }}</strong></td> <td>{{ m.nom_modele }}</td>
                 <td>{{ m.prenom }} {{ m.nom }}</td>
                 <td>{{ m.type_mouvement }}</td>
                 <td>{{ m.date_heure }}</td>
@@ -85,13 +81,11 @@
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
 
-    // On écoute le clic sur le bouton
     userBtn.addEventListener('click', function(e) {
-        e.stopPropagation(); // Empêche la fermeture immédiate via l'événement window
+        e.stopPropagation();
         userDropdown.classList.toggle('show');
     });
 
-    // Ferme le menu si on clique n'importe où ailleurs sur la page
     window.addEventListener('click', function() {
         if (userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');
@@ -101,4 +95,3 @@
 
 </body>
 </html>
-
