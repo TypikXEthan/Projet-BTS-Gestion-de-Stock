@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Annuaire Utilisateurs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
+    <a href="/utilisateurs" class="actif">Utilisateurs</a>
+    <a href="/reservations">Réservations</a>
+    <a href="/profil">Mon Profil</a>
+
+    {% if session["admin"] == 1 %}
+    <a href="/admin">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+    <header class="top-bar">
+        <h1>Utilisateurs</h1>
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="admin-card" style="border-left: 5px solid var(--bleu-principal); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2 style="margin:0; border:none; padding:0;">Mon Profil</h2>
+            <p style="color: var(--gris-moyen); margin: 5px 0 0;">Consulter mes emprunts et mes réservations en cours.</p>
+        </div>
+        <a href="/profil" class="btn btn-primary" style="text-decoration: none; padding: 10px 20px;">ACCÉDER À MON PROFIL (MOI)</a>
+    </div>
+
+    <div class="conteneur-tableau">
+        <h2 style="margin-bottom: 20px;">Membres de l'organisation</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Prénom</th>
+                    <th>Rôle</th>
+                    <th>Matériels empruntés</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in utilisateurs %}
+<tr class="ligne-profil" onclick="window.location='{{ url_for('voir_profil_public', id_user_vise=u.id_utilisateur) }}'">
+                    <td>
+                        <strong>{{ u.nom }}</strong> 
+                        {% if u.id_utilisateur == session['id_user'] %}
+                            <small style="color: var(--bleu-principal); font-style: italic;">(C'est vous)</small>
+                        {% endif %}
+                    </td>
+                    <td>{{ u.prenom }}</td>
+                    <td><span class="badge-user">{{ u.role }}</span></td>
+                    <td>
+                        {% if u.nb_emprunts > 0 %}
+                            <span class="badge-stock">{{ u.nb_emprunts }} objet(s)</span>
+                        {% else %}
+                            <span class="badge-user" style="background-color: var(--gris-clair);">Aucun</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Menu Dropdown
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    userBtn.onclick = (e) => {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+    };
+
+    window.onclick = () => {
+        userDropdown.classList.remove('show');
+    };
+</script>
+
+<style>
+    /* Effet au survol pour indiquer que c'est cliquable */
+    .ligne-profil {
+        cursor: pointer;
+        transition: var(--transition-douce);
+    }
+    .ligne-profil:hover {
+        background-color: var(--bleu-clair) !important;
+    }
+</style>
+
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flux Matériel - Live RFID</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bluebird/3.7.2/bluebird.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fetch/3.6.20/fetch.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #0b0f19; color: #f0f6fc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            
+            /* CORRECTION : On débloque le scroll pour laisser respirer le layout sur Android */
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            
+            -webkit-user-select: none; user-select: none;
+            touch-action: manipulation; 
+        }
+
+        /* CORRECTION : Remplacement complet du display: table par du Flexbox compatible Android ancien */
+        .main-layout {
+            display: -webkit-box !important; display: -ms-flexbox !important; display: flex !important;
+            -webkit-box-orient: horizontal !important; -webkit-box-direction: normal !important;
+            -ms-flex-direction: row !important; flex-direction: row !important;
+            width: 100% !important;
+            /* CORRECTION : min-height au lieu de height fixe pour éviter l'écrasement */
+            min-height: calc(100vh - 240px) !important; 
+            padding: 0 24px; box-sizing: border-box;
+            margin-bottom: 160px; /* Laisse de l'espace pour le footer sans chevauchement */
+        }
+
+        .column-main {
+            -webkit-box-flex: 1 !important; -ms-flex: 1 !important; flex: 1 !important;
+            width: 50% !important; padding: 0 12px !important; min-width: 0;
+        }
+
+        .column-content {
+            background: #151b23; border: 1px solid #30363d; border-radius: 20px;
+            padding: 24px; box-sizing: border-box;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .column-header {
+            padding-bottom: 16px; margin-bottom: 20px; font-weight: 900; font-size: 1.3rem;
+            letter-spacing: 0.05em; display: -webkit-box; display: -ms-flexbox; display: flex;
+            -webkit-box-pack: justify; -ms-flex-pack: justify; justify-content: space-between;
+            -webkit-box-align: center; -ms-flex-align: center; align-items: center;
+        }
+
+        .item-scan {
+            display: -webkit-box !important; display: -ms-flexbox !important; display: flex !important;
+            -webkit-box-align: center !important; -ms-flex-align: center !important; align-items: center !important;
+            -webkit-box-pack: justify !important; -ms-flex-pack: justify !important; justify-content: space-between !important;
+            padding: 16px 20px !important; margin-bottom: 14px !important; border-radius: 14px !important;
+            background: #21262d !important; border: 1px solid #30363d !important;
+        }
+
+        .card-retour { border-left: 6px solid #2ea043 !important; }
+        .card-sortie { border-left: 6px solid #f85149 !important; }
+        .tag-checkbox { accent-color: #58a6ff; width: 2.5rem !important; height: 2.5rem !important; cursor: pointer; }
+
+        .status-block-dispo {
+            background: rgba(46, 160, 67, 0.15) !important; color: #56d364 !important;
+            border: 1px solid rgba(46, 160, 67, 0.4) !important; padding: 6px 14px !important; border-radius: 8px !important;
+            font-size: 11px !important; font-weight: 800 !important; text-transform: uppercase;
+        }
+
+        .status-block-sortie {
+            background: rgba(248, 81, 73, 0.15) !important; color: #ff7b72 !important;
+            border: 1px solid rgba(248, 81, 73, 0.4) !important; padding: 6px 14px !important; border-radius: 8px !important;
+            font-size: 11px !important; font-weight: 800 !important; text-transform: uppercase;
+        }
+
+        /* --- POPUP DE VALIDATION (MAX COMPATIBILITÉ) --- */
+        .modal-overlay { 
+            position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
+            background: rgba(0, 0, 0, 0.95) !important; z-index: 99999 !important; display: none;
+        }
+
+        /* Utilisation d'un fallback flex pour l'alignement de la popup */
+        .modal-overlay.open { 
+            display: -webkit-box !important; display: -ms-flexbox !important; display: flex !important;
+            -webkit-box-align: center !important; -ms-flex-align: center !important; align-items: center !important;
+            -webkit-box-pack: center !important; -ms-flex-pack: center !important; justify-content: center !important; 
+        }
+
+        .glass-modal { 
+            background: #151b23 !important; border: 1px solid #30363d !important; border-radius: 24px !important; 
+            width: 92% !important; max-width: 580px !important; padding: 32px !important; box-sizing: border-box;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.9); margin: auto !important;
+        }
+
+        .popup-table-wrapper {
+            max-height: 180px !important; overflow-y: auto !important; margin: 20px 0 !important;
+            border: 1px solid #30363d !important; border-radius: 12px !important; background: #0d1117 !important;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .vrai-tableau { width: 100% !important; border-collapse: collapse !important; }
+        .vrai-tableau th {
+            background: #21262d !important; padding: 12px 18px !important; font-size: 12px !important;
+            color: #8b949e !important; text-transform: uppercase; border-bottom: 1px solid #30363d !important; text-align: left;
+        }
+        .vrai-tableau td { padding: 14px 18px !important; border-bottom: 1px solid #21262d !important; color: #f0f6fc !important; }
+
+        .badge-pulse { animation: pulse-blue 2s infinite ease-in-out; }
+        @keyframes pulse-blue { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <header class="flex flex-col items-center justify-center pt-5 pb-4 border-b border-[#30363d] bg-[#0d1117]">
+        <h1 class="text-3xl font-black uppercase tracking-widest text-[#58a6ff] m-0">GESTION <span class="text-white">RFID</span></h1>
+        <div class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mt-1">Flux Matériel — Fix Tab A6</div>
+    </header>
+
+    <div class="main-layout mt-6">
+        <div class="column-main">
+            <div class="column-content">
+                <div class="column-header border-b border-gray-800 text-[#2ea043]">
+                    <span>RETOUR EN STOCK</span>
+                    <span id="count-entree" class="bg-[#2ea043]/10 border border-[#2ea043]/30 px-4 py-1 rounded-full text-xs font-bold text-[#56d364]">0</span>
+                </div>
+                <div id="liste-entree" class="overflow-y-auto max-h-[450px] pr-1"></div>
+            </div>
+        </div>
+        <div class="column-main">
+            <div class="column-content">
+                <div class="column-header border-b border-gray-800 text-[#f85149]">
+                    <span>SORTIE DE MATÉRIEL</span>
+                    <span id="count-sortie" class="bg-[#f85149]/10 border border-[#f85149]/30 px-4 py-1 rounded-full text-xs font-bold text-[#ff7b72]">0</span>
+                </div>
+                <div id="liste-sortie" class="overflow-y-auto max-h-[450px] pr-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="fixed bottom-0 left-0 right-0 p-6 flex flex-col items-center justify-center bg-[#0d1117] border-t border-[#30363d] z-40">
+        <div class="badge-pulse mb-4 text-[11px] tracking-widest font-bold uppercase text-[#58a6ff] flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#58a6ff] shadow-[0_0_8px_#58a6ff]"></span> 
+            Suivi matériel synchronisé
+        </div>
+        <div class="flex items-center justify-center w-full max-w-md">
+            <button id="btn-ouvrir-validation" class="bg-[#238636] text-white px-20 py-5 rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl w-full text-center border-b-4 border-[#1b6528]">
+                TERMINER LA SESSION
+            </button>
+        </div>
+    </footer>
+
+    <div id="modal-validation" class="modal-overlay">
+        <div class="glass-modal text-center">
+            
+            <div id="etape-recap">
+                <h2 class="text-2xl font-black text-[#58a6ff] uppercase tracking-tight m-0">Récapitulatif Matériel</h2>
+                <p class="text-[11px] text-gray-500 uppercase tracking-wider mt-1 m-0">Vérification des équipements détectés</p>
+                <div class="popup-table-wrapper">
+                    <table class="vrai-tableau">
+                        <thead>
+                            <tr>
+                                <th style="width: 70%">Équipement</th>
+                                <th style="width: 30%; text-align: right;">Mouvement</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recap-tbody"></tbody>
+                    </table>
+                </div>
+                <div class="bg-[#58a6ff]/10 border border-[#58a6ff]/20 text-[#58a6ff] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5 badge-pulse">
+                    👋 SCANNEZ VOTRE BADGE POUR CONTINUER
+                </div>
+                <div class="flex justify-center w-full">
+                    <button id="btn-annuler-modal" class="bg-transparent border border-gray-700 px-8 py-3 rounded-xl font-bold uppercase text-xs text-gray-400 min-w-[160px]">
+                        Annuler / Retour
+                    </button>
+                </div>
+            </div>
+
+            <div id="etape-statut-local" class="hidden py-4">
+                <div class="w-16 h-16 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-bold">?</div>
+                <h2 class="text-xl font-black text-gray-400 uppercase tracking-tight m-0">Statut du local</h2>
+                <p class="text-2xl text-white font-black uppercase tracking-wide mt-3 mb-6">Y a-t-il encore quelqu'un dans le local ?</p>
+                <div class="flex items-center justify-center gap-4 max-w-sm mx-auto">
+                    <button id="btn-option-oui" class="flex-1 bg-[#238636] text-white py-4 rounded-xl font-black uppercase text-sm tracking-widest shadow-lg border-b-4 border-[#1b6528]">
+                        OUI
+                    </button>
+                    <button id="btn-option-non" class="flex-1 bg-[#f85149] text-white py-4 rounded-xl font-black uppercase text-sm tracking-widest shadow-lg border-b-4 border-[#b62b26]">
+                        NON
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // CORRECTION : Forçage du mode Polling immédiat pour stabiliser l'ancien moteur réseau Android
+        var socket = io({
+            transports: ['polling', 'websocket'],
+            upgrade: true,
+            rememberUpgrade: false
+        });
+        
+        var dernierUidBadgeProf = "SESSION_TABLETTE";
+
+        // CORRECTION : Retrait complet de l'option { passive: false } qui fait planter le gestionnaire d'événement
+        function attacherEvenementTactile(idElement, callback) {
+            var el = document.getElementById(idElement);
+            if (!el) return;
+            var executerAction = function(e) {
+                e.preventDefault(); 
+                e.stopPropagation();
+                callback();
+            };
+            el.addEventListener('touchstart', executerAction);
+            el.addEventListener('click', executerAction);
+        }
+
+        // 1. EVENT SOCKET.IO RECU (Changement de vue dans la popup)
+        socket.on('resultat_badge', function(data) {
+            console.log("Badge capté :", data);
+            var isPopupOpen = document.getElementById('modal-validation').classList.contains('open');
+            var isEtapeRecapVisible = !document.getElementById('etape-recap').classList.contains('hidden');
+
+            if (isPopupOpen && isEtapeRecapVisible) {
+                if (data && data.badge_uid) {
+                    dernierUidBadgeProf = data.badge_uid;
+                }
+                basculerVersEtapeStatutLocal();
+            }
+        });
+
+        function basculerVersEtapeStatutLocal() {
+            document.getElementById('etape-recap').classList.add('hidden');
+            document.getElementById('etape-statut-local').classList.remove('hidden');
+        }
+
+        // 2. ENVOI DES DONNEES PAR POST
+        function envoyerClotureFinale(choixOption) {
+            var checkedBoxes = document.querySelectorAll('.check-action:checked');
+            var tagsArray = [];
+            for (var i = 0; i < checkedBoxes.length; i++) {
+                tagsArray.push(checkedBoxes[i].value);
+            }
+
+            fetch('/valider_session_finale', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    badge_uid: dernierUidBadgeProf,
+                    tags: tagsArray,
+                    statut_local: choixOption
+                })
+            })
+            .then(function() { nettoyerEtFermerTout(); })
+            .catch(function() { nettoyerEtFermerTout(); });
+        }
+
+        function nettoyerEtFermerTout() {
+            document.getElementById('liste-entree').innerHTML = '';
+            document.getElementById('liste-sortie').innerHTML = '';
+            updateCounts();
+            closeModal();
+        }
+
+        // Attachement tactile nettoyé
+        attacherEvenementTactile('btn-ouvrir-validation', function() { ouvrirPopupValidation(); });
+        attacherEvenementTactile('btn-annuler-modal', function() { closeModal(); });
+        attacherEvenementTactile('btn-option-oui', function() { envoyerClotureFinale('OUI'); });
+        attacherEvenementTactile('btn-option-non', function() { envoyerClotureFinale('NON'); });
+
+        // --- ECOUTE DES TAGS RFID EN DIRECT (Syntaxe ES5 pure) ---
+        socket.on('mouvement_stock', function(data) {
+            var oldItem = document.getElementById('item-' + data.id);
+            if (oldItem) oldItem.remove();
+
+            var isDispo = (data.etat === 'Disponible');
+            var targetContainer = document.getElementById(isDispo ? 'liste-entree' : 'liste-sortie');
+            if (!targetContainer) return;
+
+            var card = document.createElement('div');
+            card.id = 'item-' + data.id;
+            card.className = 'item-scan ' + (isDispo ? 'card-retour' : 'card-sortie');
+            card.setAttribute('data-id', data.id);
+            card.setAttribute('data-nom', data.nom);
+            card.setAttribute('data-etat', data.etat);
+
+            card.innerHTML = '<div class="card-left-side" style="display:flex; align-items:center; gap:12px;">' +
+                '<input type="checkbox" checked class="tag-checkbox check-action" value="' + data.id + '">' +
+                '<div><h3 class="font-bold text-base text-white m-0">' + data.nom + '</h3>' +
+                '<p class="text-[10px] text-gray-500 font-mono m-0 mt-0.5">' + data.id + '</p></div></div>' +
+                '<div><span class="' + (isDispo ? 'status-block-dispo' : 'status-block-sortie') + '">' + data.etat + '</span></div>';
+            
+            targetContainer.insertBefore(card, targetContainer.firstChild);
+            updateCounts();
+        });
+
+        socket.on('suppression_tag', function(data) {
+            var el = document.getElementById('item-' + data.id);
+            if (el) el.remove();
+            updateCounts();
+        });
+
+        function updateCounts() {
+            document.getElementById('count-entree').innerText = document.getElementById('liste-entree').children.length;
+            document.getElementById('count-sortie').innerText = document.getElementById('liste-sortie').children.length;
+        }
+
+        function ouvrirPopupValidation() {
+            var tbody = document.getElementById('recap-tbody');
+            tbody.innerHTML = ''; 
+
+            document.getElementById('etape-statut-local').classList.add('hidden');
+            document.getElementById('etape-recap').classList.remove('hidden');
+
+            var checkedBoxes = document.querySelectorAll('.check-action:checked');
+            if (checkedBoxes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-gray-500 italic text-xs py-6">Aucun matériel détecté.</td></tr>';
+            } else {
+                for (var i = 0; i < checkedBoxes.length; i++) {
+                    var cb = checkedBoxes[i];
+                    var parentCard = document.getElementById('item-' + cb.value);
+                    if (parentCard) {
+                        var nom = parentCard.getAttribute('data-nom');
+                        var etat = parentCard.getAttribute('data-etat');
+                        var isDispo = (etat === 'Disponible');
+
+                        var tr = document.createElement('tr');
+                        tr.innerHTML = '<td class="font-semibold text-sm text-white text-left">' + nom + '</td>' +
+                            '<td style="text-align: right;"><span class="' + (isDispo ? 'status-block-dispo' : 'status-block-sortie') + '">' + (isDispo ? 'Entrée' : 'Sortie') + '</span></td>';
+                        tbody.appendChild(tr);
+                    }
+                }
+            }
+            document.getElementById('modal-validation').classList.add('open');
+        }
+
+        function closeModal() { document.getElementById('modal-validation').classList.remove('open'); }
+    </script>
+</body>
+</html>
