@@ -4,7 +4,22 @@
     <meta charset="UTF-8">
     <title>Historique des Accès Portes</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <style>
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; }
+        .pagination-info { font-size: 0.9em; color: #666; }
+        .pagination-buttons { display: flex; gap: 5px; }
+        .page-link { display: inline-block; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; color: #333; text-decoration: none; font-size: 0.9em; font-weight: bold; }
+        .page-link:hover { background-color: #f5f5f5; }
+        .page-link.active { background-color: #34495e; color: white; border-color: #34495e; }
+        .page-link.disabled { color: #bbb; pointer-events: none; background-color: #fafafa; border-color: #eee; }
+        
+        .search-container { margin-bottom: 20px; display: flex; justify-content: flex-start; }
+        .search-form { display: flex; gap: 10px; width: 100%; max-width: 450px; }
+        .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+        .btn-search { padding: 8px 15px; background-color: #34495e; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .btn-clear { padding: 8px 15px; background-color: #e74c3c; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; }
+    </style>
 </head>
 
 <body class="corps-tableau-de-bord">
@@ -17,7 +32,7 @@
     <a href="/historique_acces" class="actif">Journal d'accès</a>
     <a href="/utilisateurs">Utilisateurs</a>
     <a href="/reservations">Réservations</a>
-<a href="/profil">Mon Profil</a>
+    <a href="/profil">Mon Profil</a>
     
     {% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
@@ -47,72 +62,108 @@
         </div>
     </header>
 
-    <form method="get" style="margin-bottom: 20px;">
-        <input type="text" name="recherche" placeholder="Rechercher une porte, un statut..." value="{{ recherche if recherche else '' }}" style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ccc;">
-        <button type="submit" style="padding: 10px 20px; border-radius: 8px; border: none; background-color: #34495e; color: white; cursor: pointer;">Rechercher</button>
-    </form>
+    <div class="conteneur-tableau" style="margin-top: 25px;">
+        
+        <div class="search-container">
+            <form method="get" action="/historique_acces" class="search-form">
+                <input type="text" name="recherche" class="search-input" placeholder="Rechercher une date, un utilisateur, statut..." value="{{ recherche }}">
+                <button type="submit" class="btn-search">Rechercher</button>
+                {% if recherche %}
+                    <a href="/historique_acces" class="btn-clear">X</a>
+                {% endif %}
+            </form>
+        </div>
 
-    <div class="conteneur-tableau">
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Heure</th>
-                <th>Utilisateur</th>
-                <th>Statut de l'Accès</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for log in logs %}
-            <tr>
-                <td style="font-family: monospace;">{{ log.date_acces }}</td>
-                <td style="font-family: monospace;">{{ log.heure_acces }}</td>
-                <td>
-                    {% if log.id_utilisateur %}
-                        <strong style="color: #2c3e50;">{{ log.prenom }} {{ log.nom }}</strong>
-                    {% else %}
-                        <span style="color: #e74c3c; font-weight: bold; font-style: italic;"> Utilisateur Inconnu</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if 'AUTORIS' in log.statut_clean %}
-                        <span style="background-color: #2ecc71; color: white; padding: 6px 15px; border-radius: 20px; font-size: 0.85em; font-weight: 800; display: inline-block; box-shadow: 0 2px 4px rgba(46, 204, 113, 0.2);">
-                             ACCÈS AUTORISÉ
-                        </span>
-                    {% else %}
-                        <span style="background-color: #e74c3c; color: white; padding: 6px 15px; border-radius: 20px; font-size: 0.85em; font-weight: 800; display: inline-block; box-shadow: 0 2px 4px rgba(231, 76, 60, 0.2);">
-                             {{ log.statut_acces }}
-                        </span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Heure</th>
+                    <th>Utilisateur</th>
+                    <th>Statut de l'Accès</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td style="font-family: monospace;">{{ log.date_acces }}</td>
+                    <td style="font-family: monospace;">{{ log.heure_acces }}</td>
+                    <td>
+                        {% if log.id_utilisateur %}
+                            <strong style="color: #2c3e50;">{{ log.prenom }} {{ log.nom }}</strong>
+                        {% else %}
+                            <span style="color: #e74c3c; font-weight: bold; font-style: italic;"> Utilisateur Inconnu</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.statut_clean and 'AUTORIS' in log.statut_clean %}
+                            <span style="background-color: #2ecc71; color: white; padding: 6px 15px; border-radius: 20px; font-size: 0.85em; font-weight: 800; display: inline-block;">
+                                ACCÈS AUTORISÉ
+                            </span>
+                        {% else %}
+                            <span style="background-color: #e74c3c; color: white; padding: 6px 15px; border-radius: 20px; font-size: 0.85em; font-weight: 800; display: inline-block;">
+                                {{ log.statut_acces }}
+                            </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 20px; color: #7f8c8d;">Aucun log d'accès enregistré pour le moment.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
 
-    {% if not logs %}
-    <div style="text-align: center; padding: 40px; color: #7f8c8d;">
-        <p>Aucun log d'accès enregistré pour le moment.</p>
+        {% if total_pages > 1 %}
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Affichage des résultats — Page <strong>{{ page }}</strong> sur <strong>{{ total_pages }}</strong> (Total : {{ total_elements }} lignes)
+            </div>
+            <div class="pagination-buttons">
+                <a href="{{ url_for('historique_access_page', page=page - 1, recherche=recherche) }}" class="page-link {% if page == 1 %}disabled{% endif %}">« Précédent</a>
+                
+                <a href="{{ url_for('historique_access_page', page=1, recherche=recherche) }}" class="page-link {% if page == 1 %}active{% endif %}">1</a>
+
+                {% if page > 4 %}
+                    <span class="page-link disabled" style="border: none; background: none;">...</span>
+                {% endif %}
+
+                {% for p in range(2, total_pages) %}
+                    {% if p >= page - 2 and p <= page + 2 %}
+                        <a href="{{ url_for('historique_access_page', page=p, recherche=recherche) }}" class="page-link {% if p == page %}active{% endif %}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages - 3 %}
+                    <span class="page-link disabled" style="border: none; background: none;">...</span>
+                {% endif %}
+
+                <a href="{{ url_for('historique_access_page', page=total_pages, recherche=recherche) }}" class="page-link {% if page == total_pages %}active{% endif %}">{{ total_pages }}</a>
+
+                <a href="{{ url_for('historique_access_page', page=page + 1, recherche=recherche) }}" class="page-link {% if page == total_pages %}disabled{% endif %}">Suivant »</a>
+            </div>
+        </div>
+        {% endif %}
     </div>
-    {% endif %}
-</div>
 </div>
 
 <script>
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
 
-    userBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        userDropdown.classList.toggle('show');
-    });
+    if (userBtn) {
+        userBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            userDropdown.classList.toggle('show');
+        });
+    }
 
     window.addEventListener('click', function() {
-        if (userDropdown.classList.contains('show')) {
+        if (userDropdown && userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');
         }
     });
 </script>
-
 </body>
 </html>

@@ -4,7 +4,22 @@
     <meta charset="UTF-8">
     <title>Matériels</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <style>
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; }
+        .pagination-info { font-size: 0.9em; color: #666; }
+        .pagination-buttons { display: flex; gap: 5px; }
+        .page-link { display: inline-block; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; color: #333; text-decoration: none; font-size: 0.9em; font-weight: bold; }
+        .page-link:hover { background-color: #f5f5f5; }
+        .page-link.active { background-color: #34495e; color: white; border-color: #34495e; }
+        .page-link.disabled { color: #bbb; pointer-events: none; background-color: #fafafa; border-color: #eee; }
+        
+        .search-container { margin-bottom: 20px; display: flex; justify-content: flex-start; }
+        .search-form { display: flex; gap: 10px; width: 100%; max-width: 450px; }
+        .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+        .btn-search { padding: 8px 15px; background-color: #34495e; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .btn-clear { padding: 8px 15px; background-color: #e74c3c; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; }
+    </style>
 </head>
 
 <body class="corps-tableau-de-bord">
@@ -18,18 +33,17 @@
     <a href="/reservations">Réservations</a>
     <a href="/profil">Mon Profil</a>
 
-{% if session["admin"] == 1 %}
+    {% if session["admin"] == 1 %}
     <a href="/admin" class="admin-btn">Administration</a>
     {% endif %}
     <a href="/logout" class="deconnexion">Déconnexion</a>
 </div>
 
-
 <div class="contenu-tableau-de-bord">
 
     <header class="top-bar">
         <div class="titre-page">
-            <h1>Materiels</h1>
+            <h1>Matériels</h1>
         </div>
 
         <div class="menu-utilisateur" id="userBtn">
@@ -46,16 +60,18 @@
         </div>
     </header>
 
-    <!-- RECHERCHE -->
-    <form method="get" class="barre-recherche">
-        <input type="text" name="recherche"
-               placeholder="Rechercher..."
-               value="{{ recherche }}">
-        <button type="submit">Rechercher</button>
-    </form>
+    <div class="conteneur-tableau" style="margin-top: 25px;">
+        
+        <div class="search-container">
+            <form method="get" action="/materiels" class="search-form">
+                <input type="text" name="recherche" class="search-input" placeholder="Rechercher un modèle ou tag..." value="{{ recherche }}">
+                <button type="submit" class="btn-search">Rechercher</button>
+                {% if recherche %}
+                    <a href="/materiels" class="btn-clear">X</a>
+                {% endif %}
+            </form>
+        </div>
 
-    <!-- TABLE -->
-    <div class="conteneur-tableau">
         <table>
             <thead>
                 <tr>
@@ -65,75 +81,83 @@
                     <th>État</th>
                 </tr>
             </thead>
-
-<tbody>
-    {% for m in materiels %}
-    <tr onclick="window.location.href='/reservation_materiel_liste/{{ m.id_materiel }}'" style="cursor: pointer;">
-        <td>{{ m.id_materiel }}</td>
-        <td><strong>{{ m.nom_modele }}</strong></td>
-        <td>{{ m.rfid_tag_epc }}</td>
-        <td>
-            {% if m.etat == "Disponible" %}
-                <span class="statut-ok">Disponible</span>
-            {% elif m.etat == "Sortie" %}
-                <span class="statut-ko">Sortie</span>
-            {% elif m.etat == "Réservé" %}
-                <span class="statut-reserve">Réservé</span>
-            {% elif m.etat == "Maintenance" %}
-                <span class="statut-maintenance">Maintenance</span>
-            {% else %}
-                <span>{{ m.etat }}</span>
-            {% endif %}
-        </td>
-    </tr>
-    {% endfor %}
-</tbody>
-
+            <tbody>
+                {% for m in materiels %}
+                <tr onclick="window.location.href='/reservation_materiel_liste/{{ m.id_materiel }}'" style="cursor: pointer;">
+                    <td>{{ m.id_materiel }}</td>
+                    <td><strong>{{ m.nom_modele }}</strong></td>
+                    <td>{{ m.rfid_tag_epc }}</td>
+                    <td>
+                        {% if m.etat == "Disponible" %}
+                            <span class="statut-ok">Disponible</span>
+                        {% elif m.etat == "Sortie" %}
+                            <span class="statut-ko">Sortie</span>
+                        {% elif m.etat == "Réservé" %}
+                            <span class="statut-reserve">Réservé</span>
+                        {% elif m.etat == "Maintenance" %}
+                            <span class="statut-maintenance">Maintenance</span>
+                        {% else %}
+                            <span>{{ m.etat }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 20px; color: #7f8c8d;">Aucun matériel trouvé.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
 
-        {% if not materiels %}
-            <p>Aucun matériel trouvé.</p>
+        {% if total_pages > 1 %}
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Affichage des résultats — Page <strong>{{ page }}</strong> sur <strong>{{ total_pages }}</strong> (Total : {{ total_elements }} lignes)
+            </div>
+            <div class="pagination-buttons">
+                <a href="{{ url_for('materiels', page=page - 1, recherche=recherche) }}" class="page-link {% if page == 1 %}disabled{% endif %}">« Précédent</a>
+                
+                <a href="{{ url_for('materiels', page=1, recherche=recherche) }}" class="page-link {% if page == 1 %}active{% endif %}">1</a>
+
+                {% if page > 4 %}
+                    <span class="page-link disabled" style="border: none; background: none;">...</span>
+                {% endif %}
+
+                {% for p in range(2, total_pages) %}
+                    {% if p >= page - 2 and p <= page + 2 %}
+                        <a href="{{ url_for('materiels', page=p, recherche=recherche) }}" class="page-link {% if p == page %}active{% endif %}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages - 3 %}
+                    <span class="page-link disabled" style="border: none; background: none;">...</span>
+                {% endif %}
+
+                <a href="{{ url_for('materiels', page=total_pages, recherche=recherche) }}" class="page-link {% if page == total_pages %}active{% endif %}">{{ total_pages }}</a>
+
+                <a href="{{ url_for('materiels', page=page + 1, recherche=recherche) }}" class="page-link {% if page == total_pages %}disabled{% endif %}">Suivant »</a>
+            </div>
+        </div>
         {% endif %}
     </div>
-
-    <!-- PAGINATION -->
-    {% if total_pages and total_pages > 1 %}
-    <div class="pagination">
-        <a href="?page=1&recherche={{ recherche }}">⏮️</a>
-
-        {% if page > 1 %}
-            <a href="?page={{ page - 1 }}&recherche={{ recherche }}">⬅️</a>
-        {% endif %}
-
-        <span>Page {{ page }} / {{ total_pages }}</span>
-
-        {% if page < total_pages %}
-            <a href="?page={{ page + 1 }}&recherche={{ recherche }}">➡️</a>
-        {% endif %}
-
-        <a href="?page={{ total_pages }}&recherche={{ recherche }}">⏭️</a>
-    </div>
-    {% endif %}
-
 </div>
 
 <script>
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
 
-    // On écoute le clic sur le bouton
-    userBtn.addEventListener('click', function(e) {
-        e.stopPropagation(); // Empêche la fermeture immédiate via l'événement window
-        userDropdown.classList.toggle('show');
-    });
+    if (userBtn) {
+        userBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            userDropdown.classList.toggle('show');
+        });
+    }
 
-    // Ferme le menu si on clique n'importe où ailleurs sur la page
     window.addEventListener('click', function() {
-        if (userDropdown.classList.contains('show')) {
+        if (userDropdown && userDropdown.classList.contains('show')) {
             userDropdown.classList.remove('show');
         }
     });
 </script>
-
 </body>
 </html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Historique Global des Réservations - RFID</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        .badge-status { padding: 5px 12px; border-radius: 20px; font-size: 0.85em; color: white; display: inline-block; font-weight: bold; }
+        .badge-bleu { background-color: #3498db; }
+        .badge-vert { background-color: #2ecc71; }
+        .badge-rouge { background-color: #e74c3c; }
+        .badge-gris { background-color: #95a5a6; }
+        .id-label { color: #666; font-size: 0.85em; font-weight: normal; }
+
+        /* Styles Barre de recherche et filtres */
+        .search-container { margin-bottom: 20px; display: flex; justify-content: flex-end; }
+        .search-form { display: flex; gap: 10px; width: 100%; max-width: 450px; }
+        .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+        .btn-search { padding: 8px 15px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .btn-clear { padding: 8px 15px; background-color: #e74c3c; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; }
+
+        /* Styles de la Pagination */
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; }
+        .pagination-info { font-size: 0.9em; color: #666; }
+        .pagination-buttons { display: flex; gap: 5px; }
+        .page-link { display: inline-block; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; color: #333; text-decoration: none; font-size: 0.9em; font-weight: bold; }
+        .page-link:hover { background-color: #f5f5f5; }
+        .page-link.active { background-color: #34495e; color: white; border-color: #34495e; }
+        .page-link.disabled { color: #bbb; pointer-events: none; background-color: #fafafa; border-color: #eee; }
+    </style>
+</head>
+
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/reservations" class="actif">Réservations</a>
+    <a href="/profil">Mon Profil</a>
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+    
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1><a href="/reservations" style="color: inherit; text-decoration: none;">Gestion des Réservations</a> / Historique complet</h1>
+        </div>
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="conteneur-tableau" style="margin-top: 25px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+            <h2>Toutes mes réservations (Historique total)</h2>
+            <a href="/reservations" style="text-decoration: none; color: #3498db; font-weight: bold;">← Retour aux réservations actives</a>
+        </div>
+
+        <div class="search-container">
+            <form method="GET" action="/all_reservations" class="search-form">
+                <input type="text" name="search" class="search-input" placeholder="Rechercher votre ancienne reservation spécifique" value="{{ search }}">
+                <button type="submit" class="btn-search">Rechercher</button>
+                {% if search %}
+                    <a href="/all_reservations" class="btn-clear">X</a>
+                {% endif %}
+            </form>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>ID Résa</th>
+                    <th>Matériel</th>
+                    <th>Date début</th>
+                    <th>Date limite / fin</th>
+                    <th>Statut</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in mes_reservations %}
+                <tr>
+                    <td><code>#{{ r.id_reservation }}</code></td>
+                    <td>
+                        <strong>{{ r.nom_modele }}</strong><br>
+                        <span class="id-label">ID Matériel: #{{ r.id_materiel }}</span>
+                    </td>
+                    <td>{{ r.date_reservation.strftime('%d/%m/%Y') }}</td>
+                    <td>{{ r.date_limite.strftime('%d/%m/%Y') }}</td>
+                    <td>
+                        {% if r.statut == 'Confirmée' %}
+                            <span class="badge-status badge-bleu">Confirmée</span>
+                        {% elif r.statut == 'Récupérée' %}
+                            {% if r.date_limite < aujourdhui %}
+                                <span class="badge-status badge-rouge">En retard</span>
+                            {% else %}
+                                <span class="badge-status badge-vert">En possession</span>
+                            {% endif %}
+                        {% elif r.statut == 'Retard' %}
+                            <span class="badge-status badge-rouge">Retard</span>
+                        {% elif r.statut == 'Terminée' or r.statut == 'Rendu' %}
+                            <span class="badge-status badge-gris">Rendu</span>
+                        {% elif r.statut == 'Annulée' %}
+                            <span class="badge-status" style="background:#bbb;">Annulée</span>
+                        {% else %}
+                            <span class="badge-status" style="background:#7f8c8d;">{{ r.statut }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align:center; padding:20px;">Aucun historique de réservation ne correspond à votre recherche.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if total_pages > 1 %}
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Affichage des résultats — Page <strong>{{ page_actuelle }}</strong> sur <strong>{{ total_pages }}</strong> (Total : {{ total_elements }} lignes)
+            </div>
+            <div class="pagination-buttons">
+                <a href="{{ url_for('all_reservations', page=page_actuelle - 1, search=search) }}" class="page-link {% if page_actuelle == 1 %}disabled{% endif %}">« Précédent</a>
+                
+                {% for p in range(1, total_pages + 1) %}
+                    <a href="{{ url_for('all_reservations', page=p, search=search) }}" class="page-link {% if p == page_actuelle %}active{% endif %}">{{ p }}</a>
+                {% endfor %}
+
+                <a href="{{ url_for('all_reservations', page=page_actuelle + 1, search=search) }}" class="page-link {% if page_actuelle == total_pages %}disabled{% endif %}">Suivant »</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+    
+    if (userBtn) {
+        userBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            userDropdown.classList.toggle('show');
+        });
+    }
+
+    window.addEventListener('click', function() {
+        if (userDropdown && userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
+
+</body>
+</html>

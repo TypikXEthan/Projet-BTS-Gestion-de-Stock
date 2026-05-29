@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Réservations - RFID</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
     <style>
         .alert { padding: 15px; margin-bottom: 20px; border-radius: 5px; color: white; font-weight: bold; }
@@ -19,7 +19,6 @@
         .form-reservation-inline { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
         .form-group { display: flex; flex-direction: column; }
         
-        /* Petit style pour l'ID sous le nom */
         .id-label { color: #666; font-size: 0.85em; font-weight: normal; }
     </style>
 </head>
@@ -101,7 +100,7 @@
     </div>
 
     <div class="conteneur-tableau">
-        <h2>Mes réservations</h2>
+        <h2>Mes réservations actuelles (Moins de 1 mois)</h2>
         <table>
             <thead>
                 <tr>
@@ -124,29 +123,21 @@
                     <td>
                         {% if r.statut == 'Confirmée' %}
                             <span class="badge-status badge-bleu"> Confirmée</span>
-                        
                         {% elif r.statut == 'Récupérée' %}
                             {% if r.date_limite < aujourdhui %}
                                 <span class="badge-status badge-rouge"> En retard</span>
                             {% else %}
                                 <span class="badge-status badge-vert"> En possession</span>
                             {% endif %}
-                        
                         {% elif r.statut == 'Retard' %}
                             <span class="badge-status badge-rouge"> Retard</span>
-
-                        {% elif r.statut == 'Terminée' or r.statut == 'Rendu' %}
-                            <span class="badge-status badge-gris"> Rendu</span>
-                        
-                        {% elif r.statut == 'Annulée' %}
-                            <span class="badge-status" style="background:#bbb;">Annulée</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if r.statut == 'Confirmée' %}
                             <form method="POST" onsubmit="return confirm('Annuler cette réservation ?');">
                                 <input type="hidden" name="id_reservation" value="{{ r.id_reservation }}">
-                                <button type="submit" name="action" value="annuler" class="btn-icon-danger" style="color:red; background:none; border:none; cursor:pointer; text-decoration:underline;">Annuler</button>
+                                <button type="submit" name="action" value="annuler" style="color:red; background:none; border:none; cursor:pointer; text-decoration:underline;">Annuler</button>
                             </form>
                         {% else %}
                             <small style="color: gray;">--</small>
@@ -155,17 +146,20 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" style="text-align:center; padding:20px;">Aucune réservation pour le moment.</td>
+                    <td colspan="5" style="text-align:center; padding:20px;">Aucune réservation active sur les 30 derniers jours.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+
+        <div style="text-align: right; margin-top: 20px;">
+            <a href="/all_reservations" style="text-decoration: none; display: inline-block; padding: 10px 20px; background-color: #34495e; color: white; border-radius: 4px; font-weight: bold; transition: background 0.2s;">Voir toutes mes réservations (Historique global) →</a>
+        </div>
     </div>
 
 </div>
 
 <script>
-    // Script pour le menu déroulant utilisateur
     const userBtn = document.getElementById('userBtn');
     const userDropdown = document.getElementById('userDropdown');
     

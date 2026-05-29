@@ -6,10 +6,10 @@ import time
 import json
 from flask_socketio import SocketIO, emit
 import uuid
-import os # <--- Ajoute ça
-from dotenv import load_dotenv # <--- Ajoute ça
+import os 
+from dotenv import load_dotenv 
 import re
-from flask_mail import Mail, Message  # <--- AJOUTE ÇA
+from flask_mail import Mail, Message  
 from flask_apscheduler import APScheduler
 
 # Charger les variables du fichier .env
@@ -17,14 +17,18 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# --- CONFIGURATION FLASK-MAIL ---
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
 
 mail = Mail(app)
+
+# --- CONFIGURATION SCHEDULER (AUTOMATISATION) ---
+app.config['SCHEDULER_API_ENABLED'] = True
 scheduler = APScheduler()
 
 def verifier_retards_automatique():
@@ -32,10 +36,10 @@ def verifier_retards_automatique():
         maintenant = datetime.now()
         print(f"[{maintenant}] 🔍 Scan automatique des retards...")
         
-        db = get_db()
-        cursor = db.cursor(dictionary=True)
-
         try:
+            db = get_db()
+            cursor = db.cursor(dictionary=True)
+
             # 1. Sélectionner les réservations dépassées
             query = """
                 SELECT r.id_reservation, u.email, u.prenom, m.nom_modele, r.date_limite
@@ -48,13 +52,13 @@ def verifier_retards_automatique():
             cursor.execute(query)
             retards = cursor.fetchall()
             
-            print(f" Nombre de retards détectés : {len(retards)}")
+            print(f"🔹 Nombre de retards détectés : {len(retards)}")
 
             for r in retards:
                 destinataire = r['email']
                 id_res = r['id_reservation']
                 
-                # 2. Mise à jour du statut en BDD (on le fait avant le mail pour éviter les doublons)
+                # 2. Mise à jour du statut en BDD
                 cursor.execute("UPDATE reservations SET statut = 'Retard' WHERE id_reservation = %s", (id_res,))
                 db.commit() 
                 
@@ -70,16 +74,17 @@ def verifier_retards_automatique():
                         print(f"📧 Email envoyé avec succès à : {destinataire}")
                     except Exception as mail_err:
                         print(f"⚠️ Erreur lors de l'envoi à {destinataire} : {mail_err}")
-                
+                        
         except Exception as e:
             print(f"❌ Erreur lors du scan des retards : {e}")
         finally:
-            cursor.close()
-            db.close()
+            if 'cursor' in locals():
+                cursor.close()
+            if 'db' in locals():
+                db.close()
 
-# On configure la tâche pour s'exécuter toutes les heures (3600 secondes)
-
-
+# --- INITIALISATION PLANIFICATEUR ---
+scheduler.init_app(app)
 
 # On récupère la clé du .env ou on met une valeur de secours
 app.secret_key = os.getenv('SECRET_KEY', 'cle_par_defaut_pas_secure')
@@ -244,7 +249,6 @@ def dashboard():
         nom=session["nom"],
         prenom=session["prenom"]
     )
-
 # -------------------------------
 # MATERIELS
 # -------------------------------
@@ -255,22 +259,22 @@ def materiels():
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
-#recherche
-    recherche = request.args.get("recherche", "")
+
+    recherche = request.args.get("recherche", "").strip()
     params = []
     query = "SELECT * FROM materiel_stock"
+    total_query = "SELECT COUNT(*) AS total FROM materiel_stock"
 
     if recherche:
-        query += " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s"
+        condition = " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s"
+        query += condition
+        total_query += condition
         params.extend([f"%{recherche}%", f"%{recherche}%"])
-#pagination
+
+    # --- PAGINATION ---
     page = int(request.args.get("page", 1))
     limit = 10
     offset = (page - 1) * limit
-
-    total_query = "SELECT COUNT(*) AS total FROM materiel_stock"
-    if recherche:
-        total_query += " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s"
 
     cursor.execute(total_query, params)
     total_rows = cursor.fetchone()["total"]
@@ -286,62 +290,150 @@ def materiels():
     return render_template(
         "IHM/materiels.html",
         materiels=materiels,
-        page=page,
+        page=page,  # Variable uniforme 'page'
         total_pages=total_pages,
+        total_elements=total_rows,
         recherche=recherche,
         prenom=session["prenom"],
         nom=session["nom"]
     )
 
+
 # --------------------------
-#Historique
-#---------------------------
+# 2. HISTORIQUE MATÉRIELS
+# ---------------------------
 @app.route("/historique")
 def historique():
     if "id_user" not in session:
         return redirect("/")
     
-    # Récupérer ce que l'utilisateur tape
     recherche = request.args.get('recherche', '').strip()
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
     
-    # Préparation requêtes (Ajout de m.id_materiel ici)
     sql = """
         SELECT m.id_mouvement, m.id_materiel, m.type_mouvement, m.date_heure,
-               ms.nom_modele,
-               u.nom, u.prenom
+               ms.nom_modele, u.nom, u.prenom
+        FROM mouvements m
+        LEFT JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
+        LEFT JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
+    """
+    
+    total_sql = """
+        SELECT COUNT(*) AS total 
         FROM mouvements m
         LEFT JOIN materiel_stock ms ON m.id_materiel = ms.id_materiel
         LEFT JOIN utilisateurs u ON m.id_utilisateur = u.id_utilisateur
     """
 
+    params = []
     if recherche:
-        sql += """ 
+        condition = """ 
             WHERE ms.nom_modele LIKE %s 
             OR u.nom LIKE %s 
             OR u.prenom LIKE %s 
             OR m.type_mouvement LIKE %s
         """
-        params = (f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", f"%{recherche}%")
-        sql += " ORDER BY m.date_heure DESC"
-        cursor.execute(sql, params)
-    else:
-        # Affichage classique si aucune requête
-        sql += " ORDER BY m.date_heure DESC"
-        cursor.execute(sql)
+        sql += condition
+        total_sql += condition
+        params = [f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", f"%{recherche}%"]
 
+    # --- PAGINATION ---
+    page = int(request.args.get("page", 1))
+    limit = 10
+    offset = (page - 1) * limit
+
+    cursor.execute(total_sql, params)
+    total_rows = cursor.fetchone()["total"]
+    total_pages = (total_rows + limit - 1) // limit
+
+    sql += " ORDER BY m.date_heure DESC LIMIT %s OFFSET %s"
+    cursor.execute(sql, params + [limit, offset])
     mouvements = cursor.fetchall()
+    
     cursor.close()
     db.close()
 
     return render_template(
         "IHM/historique.html",
         mouvements=mouvements,
+        page=page,  # Variable uniforme 'page'
+        total_pages=total_pages,
+        total_elements=total_rows,
         nom=session["nom"],
         prenom=session["prenom"],
         recherche=recherche 
+    )
+
+
+# --------------
+# 3. HISTORIQUE ACCES
+# ----------------
+@app.route('/historique_acces')
+def historique_access_page():
+    if 'id_user' not in session:
+        return redirect(url_for('login'))
+
+    recherche = request.args.get('recherche', '').strip()
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    sql = """
+        SELECT h.*, u.nom, u.prenom 
+        FROM historique_acces h
+        LEFT JOIN utilisateurs u ON h.id_utilisateur = u.id_utilisateur
+    """
+    
+    total_sql = """
+        SELECT COUNT(*) AS total 
+        FROM historique_acces h
+        LEFT JOIN utilisateurs u ON h.id_utilisateur = u.id_utilisateur
+    """
+
+    params = []
+    if recherche:
+        condition = """ 
+            WHERE u.nom LIKE %s 
+            OR u.prenom LIKE %s 
+            OR h.statut_acces LIKE %s
+        """
+        sql += condition
+        total_sql += condition
+        search_val = f"%{recherche}%"
+        params = [search_val, search_val, search_val]
+
+    # --- PAGINATION ---
+    page = int(request.args.get("page", 1))
+    limit = 10
+    offset = (page - 1) * limit
+
+    cursor.execute(total_sql, params)
+    total_rows = cursor.fetchone()["total"]
+    total_pages = (total_rows + limit - 1) // limit
+
+    sql += " ORDER BY h.date_acces DESC, h.heure_acces DESC LIMIT %s OFFSET %s"
+    cursor.execute(sql, params + [limit, offset])
+    logs = cursor.fetchall()
+
+    for log in logs:
+        if log['statut_acces']:
+            log['statut_clean'] = log['statut_acces'].strip().upper()
+        else:
+            log['statut_clean'] = ""
+    
+    cursor.close()
+    db.close()
+
+    return render_template(
+        'IHM/historique_acces.html', 
+        logs=logs, 
+        page=page,  # Variable uniforme 'page'
+        total_pages=total_pages,
+        total_elements=total_rows,
+        nom=session.get("nom"), 
+        prenom=session.get("prenom"),
+        recherche=recherche
     )
 
 # -------------------------------
@@ -439,8 +531,9 @@ def reservations():
     
     id_u = session["id_user"]
     aujourdhui = date.today()
+    un_mois_en_arriere = aujourdhui - timedelta(days=30)
 
-    # 2. Gestion des actions
+    # 2. Gestion des actions (Réservation / Annulation)
     if request.method == "POST":
         action = request.form.get("action")
 
@@ -453,7 +546,6 @@ def reservations():
             cursor.execute("SELECT etat FROM materiel_stock WHERE id_materiel = %s", (id_m,))
             materiel = cursor.fetchone()
 
-            # .strip().lower() permet d'être insensible aux espaces et à la casse
             if materiel and materiel['etat'].strip().lower() != 'disponible':
                 flash(f"Erreur : Ce matériel est actuellement {materiel['etat']} et ne peut être réservé.", "danger")
             else:
@@ -481,32 +573,32 @@ def reservations():
             db.commit()
             flash("Réservation annulée.", "success")
 
-    # 3. Récupération des données pour le rendu
+    # 3. Récupération des matériels pour le menu déroulant
     cursor.execute("SELECT id_materiel, nom_modele, etat FROM materiel_stock")
     liste_materiels = cursor.fetchall()
 
+    # 4. Récupération UNIQUEMENT des réservations actives de moins d'un mois
     cursor.execute("""
-      SELECT r.*, m.nom_modele 
-      FROM reservations r 
-      JOIN materiel_stock m ON r.id_materiel = m.id_materiel 
-      WHERE r.id_utilisateur = %s 
-      ORDER BY 
-          CASE 
-              WHEN r.statut IN ('Confirmée', 'Récupérée', 'Retard') THEN 1 
-              ELSE 2 
-          END ASC, 
-          r.date_reservation DESC
-    """, (id_u,))
+        SELECT r.*, m.nom_modele 
+        FROM reservations r 
+        JOIN materiel_stock m ON r.id_materiel = m.id_materiel 
+        WHERE r.id_utilisateur = %s 
+        AND r.statut IN ('Confirmée', 'Récupérée', 'Retard')
+        AND r.date_reservation >= %s
+        ORDER BY r.date_reservation DESC
+    """, (id_u, un_mois_en_arriere))
     mes_res = cursor.fetchall()
 
-    # Conversion forcée pour éviter les erreurs de template
+    # Conversion des dates pour éviter les plantages de template
     for r in mes_res:
         if isinstance(r['date_limite'], datetime):
             r['date_limite'] = r['date_limite'].date()
         if isinstance(r['date_reservation'], datetime):
             r['date_reservation'] = r['date_reservation'].date()
 
+    cursor.close()
     db.close()
+    
     return render_template("IHM/reservations.html", 
                            materiels=liste_materiels, 
                            mes_reservations=mes_res,
@@ -514,6 +606,88 @@ def reservations():
                            date_min=aujourdhui.strftime('%Y-%m-%d'),
                            prenom=session.get("prenom"),
                            nom=session.get("nom"))
+
+
+@app.route("/all_reservations")
+def all_reservations():
+    """Affiche TOUTES les réservations avec barre de recherche et pagination."""
+    if "id_user" not in session:
+        return redirect(url_for("login"))
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    id_u = session["id_user"]
+    aujourdhui = date.today()
+
+    # 1. Récupération des paramètres de recherche et pagination
+    recherche = request.args.get('search', '').strip()
+    try:
+        page = int(request.args.get('page', 1))
+        if page < 1: page = 1
+    except ValueError:
+        page = 1
+
+    elements_par_page = 10
+    offset = (page - 1) * elements_par_page
+
+    # 2. Construction de la requête SQL avec filtres dynamiques
+    # On cherche par ID de réservation, nom du modèle ou correspondances sur les dates
+    query_base = """
+        FROM reservations r 
+        JOIN materiel_stock m ON r.id_materiel = m.id_materiel 
+        WHERE r.id_utilisateur = %s
+    """
+    params = [id_u]
+
+    if recherche:
+        query_base += """ AND (
+            CAST(r.id_reservation AS CHAR) LIKE %s 
+            OR m.nom_modele LIKE %s 
+            OR DATE_FORMAT(r.date_reservation, '%%d/%%m/%%Y') LIKE %s
+            OR DATE_FORMAT(r.date_limite, '%%d/%%m/%%Y') LIKE %s
+            OR DATE_FORMAT(r.date_reservation, '%%Y-%%m-%%d') LIKE %s
+            OR DATE_FORMAT(r.date_limite, '%%Y-%%m-%%d') LIKE %s
+        )"""
+        terme_recherche = f"%{recherche}%"
+        params.extend([terme_recherche, terme_recherche, terme_recherche, terme_recherche, terme_recherche, terme_recherche])
+
+    # 3. Compter le nombre total de lignes pour la pagination
+    cursor.execute(f"SELECT COUNT(*) as total {query_base}", tuple(params))
+    total_elements = cursor.fetchone()['total']
+    total_pages = (total_elements + elements_par_page - 1) // elements_par_page
+
+    # 4. Récupérer les données limitées pour la page actuelle
+    query_data = f"""
+        SELECT r.*, m.nom_modele 
+        {query_base}
+        ORDER BY r.date_reservation DESC
+        LIMIT %s OFFSET %s
+    """
+    params_data = list(params)
+    params_data.extend([elements_par_page, offset])
+    
+    cursor.execute(query_data, tuple(params_data))
+    toutes_les_res = cursor.fetchall()
+
+    # Nettoyage des dates pour le rendu HTML
+    for r in toutes_les_res:
+        if isinstance(r['date_limite'], datetime):
+            r['date_limite'] = r['date_limite'].date()
+        if isinstance(r['date_reservation'], datetime):
+            r['date_reservation'] = r['date_reservation'].date()
+
+    cursor.close()
+    db.close()
+
+    return render_template("IHM/all_reservations.html", 
+                           mes_reservations=toutes_les_res,
+                           aujourdhui=aujourdhui,
+                           prenom=session.get("prenom"),
+                           nom=session.get("nom"),
+                           search=recherche,
+                           page_actuelle=page,
+                           total_pages=total_pages,
+                           total_elements=total_elements)
 
 
 #-----------------
@@ -880,57 +1054,7 @@ def profil(user_id=None):
     return render_template("IHM/profil.html", u=user_info, possedes=materiels_possedes, reservations=reservations, nom=session["nom"], prenom=session["prenom"])
 
 
-#--------------
-#HISTORIQUE ACCEES
-#----------------
-@app.route('/historique_acces')
-def historique_access_page():
-    if 'id_user' not in session:
-        return redirect(url_for('login'))
 
-    recherche = request.args.get('recherche', '').strip()
-    db = get_db()
-    cursor = db.cursor(dictionary=True)
-
-    # On récupère les logs, pas besoin de filtrer la porte en SQL si elle est unique
-    sql = """
-        SELECT h.*, u.nom, u.prenom 
-        FROM historique_acces h
-        LEFT JOIN utilisateurs u ON h.id_utilisateur = u.id_utilisateur
-    """
-
-    params = []
-    if recherche:
-        # On a enlevé la recherche sur h.id_porte_physique car la colonne disparait
-        sql += """ 
-            WHERE u.nom LIKE %s 
-            OR u.prenom LIKE %s 
-            OR h.statut_acces LIKE %s
-        """
-        search_val = f"%{recherche}%"
-        params = [search_val, search_val, search_val]
-
-    sql += " ORDER BY h.date_acces DESC, h.heure_acces DESC LIMIT 100"
-    
-    cursor.execute(sql, params)
-    logs = cursor.fetchall()
-
-    for log in logs:
-        if log['statut_acces']:
-            log['statut_clean'] = log['statut_acces'].strip().upper()
-        else:
-            log['statut_clean'] = ""
-    
-    cursor.close()
-    db.close()
-
-    return render_template(
-        'IHM/historique_acces.html', 
-        logs=logs, 
-        nom=session.get("nom"), 
-        prenom=session.get("prenom"),
-        recherche=recherche
-    )
 
 @app.route("/reservation_materiel_liste/<int:id_mat>")
 def reservation_materiel_liste(id_mat):
@@ -979,14 +1103,13 @@ def ecran_accueil():
     """Affiche la page d'accueil de la tablette (Attente de badge)."""
     return render_template("Ecran/accueil.html")
 
-
 @app.route('/verifier_acces', methods=['POST'])
 def verifier_acces():
     """Appelé UNIQUEMENT depuis l'écran d'accueil pour ouvrir une session."""
     data = request.json
     badge_uid_raw = str(data.get('badge_uid')).strip()
     badge_hash = hashlib.sha256(badge_uid_raw.encode()).hexdigest()
-    
+
     db = get_db()
     cursor = db.cursor(dictionary=True, buffered=True)
 
@@ -1003,16 +1126,51 @@ def verifier_acces():
                 'status': 'vert',
                 'nom': nom_f,
                 'prenom': prenom_f,
-                'badge_uid': badge_uid_raw, 
+                'badge_uid': badge_uid_raw,
                 'redirect': f'/tablette/flux_materiel?badge_uid={badge_uid_raw}'
             })
             return jsonify({"status": "autorise"}), 200
         else:
+            # 1. Alerte visuelle immédiate envoyée à l'écran de la tablette via SocketIO
             socketio.emit('resultat_badge', {
-                'status': 'rouge',  
+                'status': 'rouge',
                 'message': 'Badge non enregistré dans le système.'
             })
+            
+            # 2. Récupération dynamique de TOUS les e-mails des administrateurs (admin = 1)
+            try:
+                cursor.execute("SELECT email FROM utilisateurs WHERE admin = 1")
+                admins = cursor.fetchall()
+                
+                # On extrait les adresses e-mails valides et non vides
+                liste_destinataires = [row['email'] for row in admins if row['email'] and '@' in row['email']]
+                
+                if liste_destinataires:
+                    maintenant = datetime.now()
+                    date_str = maintenant.strftime('%d/%m/%Y')
+                    heure_str = maintenant.strftime('%H:%M:%S')
+
+                    # On crée le message d'alerte
+                    msg = Message(
+                        subject="[ALERTE SECURITE] Tentative d'accès - Badge inconnu",
+                        recipients=liste_destinataires,  # Flask-Mail gère automatiquement une liste d'adresses !
+                        body=f"Bonjour,\n\nUne tentative d'accès avec un badge non enregistré a été détectée sur la tablette.\n\n"
+                             f" Date : {date_str}\n"
+                             f" Heure : {heure_str}\n"
+                             f" UID du badge (Brut) : {badge_uid_raw}\n"
+                             f" Hash SHA-256 recherché : {badge_hash}\n\n"
+                             f"Cordialement,\nLe système de gestion RFID."
+                    )
+                    mail.send(msg)
+                    print(f" E-mail d'alerte sécurité envoyé aux administrateurs : {liste_destinataires}")
+                else:
+                    print(" Aucun administrateur avec une adresse e-mail valide n'a été trouvé.")
+                    
+            except Exception as mail_err:
+                print(f"Impossible d'envoyer l'e-mail d'alerte aux administrateurs : {mail_err}")
+
             return jsonify({"status": "refuse", "message": "Badge non enregistré dans le système."}), 403
+            
     finally:
         cursor.close()
         db.close()
@@ -1208,7 +1366,6 @@ def valider_session_finale():
         db.close()
 
 # --- RELANCE RETARDS (ADMIN) ---
-
 @app.route("/relancer_retard/<int:id_res>")
 def relancer_retard(id_res):
     if "id_user" not in session or session.get("admin") != 1:
@@ -1238,20 +1395,21 @@ def relancer_retard(id_res):
         else:
             flash("Erreur : Email introuvable.", "danger")
     except Exception as e:
+        print(f"❌ Erreur relance manuelle : {e}")
         flash("Erreur lors de l'envoi de l'email.", "danger")
     finally:
+        cursor.close()
         db.close()
+        
     return redirect(url_for('admin'))
 
 # --- LOGOUT ---
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/")
 
 # --- BLOC DE LANCEMENT ---
-
 if __name__ == "__main__":
     # 1. Lancement du planificateur pour les relances automatiques
     if not scheduler.running:
@@ -1266,7 +1424,6 @@ if __name__ == "__main__":
         print("✅ Scheduler démarré (vérification des retards toutes les 30 min)")
 
     # 2. LANCEMENT DU SERVEUR AVEC SOCKET.IO
-    # On utilise le port 5000 comme configuré dans ton Apache SSL
     print("🚀 Serveur Flask-SocketIO lancé sur le port 5000...")
     
     socketio.run(
@@ -1274,5 +1431,6 @@ if __name__ == "__main__":
         host="0.0.0.0", 
         port=5000, 
         debug=True, 
-        allow_unsafe_werkzeug=True
+        allow_unsafe_werkzeug=True,
+        use_reloader=False # Empêche d'exécuter le script deux fois au démarrage en local
     )
