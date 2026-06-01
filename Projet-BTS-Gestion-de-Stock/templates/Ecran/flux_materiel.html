@@ -8,7 +8,6 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bluebird/3.7.2/bluebird.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fetch/3.6.20/fetch.min.js"></script>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     
     <style>
@@ -16,8 +15,7 @@
             margin: 0; padding: 0;
             background-color: #0b0f19; color: #f0f6fc;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            overflow-x: hidden;
-            overflow-y: auto;
+            overflow-x: hidden; overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             -webkit-user-select: none; user-select: none;
             touch-action: manipulation; 
@@ -221,7 +219,7 @@
             el.addEventListener('click', executerAction);
         }
 
-        // 1. DÉCLENCHÉ LORSQUE L'UTILISATEUR BADGE SUR LA POPUP RECAP
+        // Écoute du badge physique scanné
         socket.on('resultat_badge', function(data) {
             var isPopupOpen = document.getElementById('modal-validation').classList.contains('open');
             var isEtapeRecapVisible = !document.getElementById('etape-recap').classList.contains('hidden');
@@ -230,11 +228,11 @@
                 if (data && data.badge_uid) {
                     dernierUidBadgeProf = data.badge_uid;
                 }
-                // On lance la première vérification vers le serveur (sans option de local pour le moment)
                 verifierReservationsAvantCloture();
             }
         });
 
+        // Première étape : Envoi à Flask pour contrôler les réservations et valider le badge
         function verifierReservationsAvantCloture() {
             var checkedBoxes = document.querySelectorAll('.check-action:checked');
             var tagsArray = [];
@@ -248,7 +246,7 @@
                 body: JSON.stringify({
                     badge_uid: dernierUidBadgeProf,
                     tags: tagsArray,
-                    statut_local: null // Envoyer null force le contrôle initial
+                    statut_local: null 
                 })
             })
             .then(function(res) { return res.json(); })
@@ -256,11 +254,10 @@
                 var messageZone = document.getElementById('zone-message-badge');
 
                 if (data.status === 'bloque_reservation') {
-                    // ÉTAPE A : Il y a un blocage de réservation. On affiche l'erreur DIRECTEMENT ici.
+                    // Blocage réservation rencontré
                     messageZone.className = "bg-[#f85149]/10 border border-[#f85149]/30 text-[#ff7b72] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5";
                     messageZone.innerText = "❌ VALIDATION IMPOSSIBLE : " + data.message;
 
-                    // On parcourt les lignes du tableau récapitulatif pour injecter les mentions "Réservé par..."
                     for (var idM in data.details) {
                         var subLabel = document.getElementById('recap-sub-' + idM);
                         if (subLabel) {
@@ -270,20 +267,26 @@
                         }
                     }
                 } else if (data.status === 'attente_statut_local') {
-                    // ÉTAPE B : Pas d'erreur ! On nettoie et on avance vers la question du local
+                    // Tout est OK côté réservations -> Transition vers l'étape 2 (Statut du local)
                     messageZone.className = "bg-[#58a6ff]/10 border border-[#58a6ff]/20 text-[#58a6ff] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5 badge-pulse";
                     messageZone.innerText = "👋 SCANNEZ VOTRE BADGE POUR CONTINUER";
                     
                     document.getElementById('etape-recap').classList.add('hidden');
                     document.getElementById('etape-statut-local').classList.remove('hidden');
                 } else if (data.status === 'error') {
-                    alert(data.message);
+                    // Gestion propre de l'erreur "Unread result found" ou "Badge inconnu" sans alerte native
+                    messageZone.className = "bg-[#f85149]/10 border border-[#f85149]/30 text-[#ff7b72] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5";
+                    if (data.message.indexOf("Unread result found") !== -1) {
+                        messageZone.innerText = "⚠️ RE-BADGEZ S'IL VOUS PLAÎT (Désynchronisation SQL)";
+                    } else {
+                        messageZone.innerText = "❌ ERREUR : " + data.message;
+                    }
                 }
             })
             .catch(function(err) { console.log(err); });
         }
 
-        // 2. ENVOI DE LA VALIDATION AVEC LE CHOIX OUI OU NON DU LOCAL
+        // Deuxième étape : Envoi final à Flask avec la décision OUI ou NON pour le local
         function envoyerClotureFinale(choixOption) {
             var checkedBoxes = document.querySelectorAll('.check-action:checked');
             var tagsArray = [];
@@ -302,16 +305,21 @@
             })
             .then(function(res) { return res.json(); })
             .then(function(data) {
+                var messageZone = document.getElementById('zone-message-badge');
                 if (data.status === 'ok') {
-                    nettoyerEtFermerTout();
                     if (choixOption === 'NON') {
+                        // Si personne dans le local, on redirige vers l'accueil de la tablette
                         window.location.href = '/tablette';
                     } else {
-                        alert("Mouvements enregistrés ! Écran prêt pour la personne suivante.");
+                        // Si encore du monde, on nettoie les listes et on ferme
+                        nettoyerEtFermerTout();
+                        messageZone.className = "bg-[#238636]/10 border border-[#238636]/30 text-[#56d364] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5";
+                        messageZone.innerText = "✅ MOUVEMENTS ENREGISTRÉS ! PRÊT POUR LA PERSONNE SUIVANTE.";
+                        setTimeout(function() { closeModal(); }, 2000);
                     }
                 } else {
-                    alert(data.message);
-                    closeModal();
+                    messageZone.className = "bg-[#f85149]/10 border border-[#f85149]/30 text-[#ff7b72] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5";
+                    messageZone.innerText = "❌ ERREUR : " + data.message;
                 }
             })
             .catch(function() { closeModal(); });
@@ -321,7 +329,6 @@
             document.getElementById('liste-entree').innerHTML = '';
             document.getElementById('liste-sortie').innerHTML = '';
             updateCounts();
-            closeModal();
         }
 
         attacherEvenementTactile('btn-ouvrir-validation', function() { ouvrirPopupValidation(); });
@@ -329,7 +336,7 @@
         attacherEvenementTactile('btn-option-oui', function() { envoyerClotureFinale('OUI'); });
         attacherEvenementTactile('btn-option-non', function() { envoyerClotureFinale('NON'); });
 
-        // --- ÉCOUTE DES TAGS RFID EN DIRECT ---
+        // Écoute des scans d'antenne RFID émis par ton backend
         socket.on('mouvement_stock', function(data) {
             var oldItem = document.getElementById('item-' + data.id);
             if (oldItem) oldItem.remove();
@@ -367,41 +374,43 @@
         }
 
         function ouvrirPopupValidation() {
-            var tbody = document.getElementById('recap-tbody');
-            tbody.innerHTML = ''; 
+    var tbody = document.getElementById('recap-tbody');
+    tbody.innerHTML = ''; 
 
-            // Remise par défaut de la zone de message
-            var messageZone = document.getElementById('zone-message-badge');
-            messageZone.className = "bg-[#58a6ff]/10 border border-[#58a6ff]/20 text-[#58a6ff] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5 badge-pulse";
-            messageZone.innerText = "👋 SCANNEZ VOTRE BADGE POUR CONTINUER";
+    var messageZone = document.getElementById('zone-message-badge');
+    messageZone.className = "bg-[#58a6ff]/10 border border-[#58a6ff]/20 text-[#58a6ff] text-xs rounded-xl p-5 font-black uppercase tracking-wider my-5 badge-pulse";
+    messageZone.innerText = "👋 SCANNEZ VOTRE BADGE POUR CONTINUER";
 
-            document.getElementById('etape-statut-local').classList.add('hidden');
-            document.getElementById('etape-recap').classList.remove('hidden');
+    document.getElementById('etape-statut-local').classList.add('hidden');
+    document.getElementById('etape-recap').classList.remove('hidden');
 
-            var checkedBoxes = document.querySelectorAll('.check-action:checked');
-            if (checkedBoxes.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-gray-500 italic text-xs py-6">Aucun matériel détecté.</td></tr>';
-            } else {
-                for (var i = 0; i < checkedBoxes.length; i++) {
-                    var cb = checkedBoxes[i];
-                    var parentCard = document.getElementById('item-' + cb.value);
-                    if (parentCard) {
-                        var nom = parentCard.getAttribute('data-nom');
-                        var etat = parentCard.getAttribute('data-etat');
-                        var isDispo = (etat === 'Disponible');
+    // On récupère uniquement les cases cochées
+    var checkedBoxes = document.querySelectorAll('.check-action:checked');
+    
+    if (checkedBoxes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-gray-500 italic text-xs py-6">Aucun matériel sélectionné.</td></tr>';
+    } else {
+        for (var i = 0; i < checkedBoxes.length; i++) {
+            var cb = checkedBoxes[i];
+            var parentCard = document.getElementById('item-' + cb.value);
+            
+            if (parentCard) {
+                var nom = parentCard.getAttribute('data-nom');
+                var etat = parentCard.getAttribute('data-etat');
+                var isDispo = (etat === 'Disponible');
 
-                        var tr = document.createElement('tr');
-                        tr.innerHTML = '<td class="text-left">' +
-                            '<div class="font-semibold text-sm text-white">' + nom + '</div>' +
-                            '<div id="recap-sub-' + cb.value + '" class="text-[11px] text-red-400 font-bold mt-0.5 hidden"></div>' +
-                            '</td>' +
-                            '<td style="text-align: right; vertical-align: top;"><span class="' + (isDispo ? 'status-block-dispo' : 'status-block-sortie') + '">' + (isDispo ? 'Entrée' : 'Sortie') + '</span></td>';
-                        tbody.appendChild(tr);
-                    }
-                }
+                var tr = document.createElement('tr');
+                tr.innerHTML = '<td class="text-left">' +
+                    '<div class="font-semibold text-sm text-white">' + nom + '</div>' +
+                    '<div id="recap-sub-' + cb.value + '" class="text-[11px] text-red-400 font-bold mt-0.5 hidden"></div>' +
+                    '</td>' +
+                    '<td style="text-align: right; vertical-align: top;"><span class="' + (isDispo ? 'status-block-dispo' : 'status-block-sortie') + '">' + (isDispo ? 'Entrée' : 'Sortie') + '</span></td>';
+                tbody.appendChild(tr);
             }
-            document.getElementById('modal-validation').classList.add('open');
         }
+    }
+    document.getElementById('modal-validation').classList.add('open');
+}
 
         function closeModal() { document.getElementById('modal-validation').classList.remove('open'); }
     </script>

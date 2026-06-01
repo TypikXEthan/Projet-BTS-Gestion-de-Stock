@@ -65,7 +65,7 @@
         
         <div class="search-container">
             <form method="get" action="/historique" class="search-form">
-                <input type="text" name="recherche" class="search-input" placeholder="Rechercher matériel, utilisateur..." value="{{ recherche }}">
+                <input type="text" name="recherche" class="search-input" placeholder="Rechercher matériel, user ou IDs..." value="{{ recherche }}">
                 <button type="submit" class="btn-search">Rechercher</button>
                 {% if recherche %}
                     <a href="/historique" class="btn-clear">X</a>

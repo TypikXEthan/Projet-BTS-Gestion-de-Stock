@@ -266,10 +266,13 @@ def materiels():
     total_query = "SELECT COUNT(*) AS total FROM materiel_stock"
 
     if recherche:
-        condition = " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s"
+        # Recherche par modèle, tag RFID ou ID Matériel exact
+        condition = " WHERE nom_modele LIKE %s OR rfid_tag_epc LIKE %s OR id_materiel = %s"
         query += condition
         total_query += condition
-        params.extend([f"%{recherche}%", f"%{recherche}%"])
+        # Si la recherche n'est pas un nombre, on passe 0 pour l'id_materiel pour éviter un plantage SQL
+        id_recherche = recherche if recherche.isdigit() else 0
+        params.extend([f"%{recherche}%", f"%{recherche}%", id_recherche])
 
     # --- PAGINATION ---
     page = int(request.args.get("page", 1))
@@ -287,10 +290,12 @@ def materiels():
     cursor.close()
     db.close()
 
+    # Double injection (page et page_actuelle) pour parer toute erreur Jinja2
     return render_template(
         "IHM/materiels.html",
         materiels=materiels,
-        page=page,  # Variable uniforme 'page'
+        page=page,
+        page_actuelle=page,
         total_pages=total_pages,
         total_elements=total_rows,
         recherche=recherche,
@@ -329,15 +334,19 @@ def historique():
 
     params = []
     if recherche:
+        # Recherche par modèle, nom, prénom, type, ID matériel ou ID utilisateur
         condition = """ 
             WHERE ms.nom_modele LIKE %s 
             OR u.nom LIKE %s 
             OR u.prenom LIKE %s 
             OR m.type_mouvement LIKE %s
+            OR m.id_materiel = %s
+            OR m.id_utilisateur = %s
         """
         sql += condition
         total_sql += condition
-        params = [f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", f"%{recherche}%"]
+        id_recherche = recherche if recherche.isdigit() else 0
+        params = [f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", f"%{recherche}%", id_recherche, id_recherche]
 
     # --- PAGINATION ---
     page = int(request.args.get("page", 1))
@@ -358,14 +367,14 @@ def historique():
     return render_template(
         "IHM/historique.html",
         mouvements=mouvements,
-        page=page,  # Variable uniforme 'page'
+        page=page,
+        page_actuelle=page,
         total_pages=total_pages,
         total_elements=total_rows,
         nom=session["nom"],
         prenom=session["prenom"],
         recherche=recherche 
     )
-
 
 # --------------
 # 3. HISTORIQUE ACCES
@@ -1195,10 +1204,9 @@ def flux_materiel():
 # ==============================================================================
 # 2. GESTION DES SCANS EN TEMPS RÉEL (PANIER VIRTUEL)
 # ==============================================================================
-
 @app.route("/scan_objet", methods=['POST'])
 def scan_objet():
-    """Accepte TOUS les scans sur l'antenne sans bloquer (la vérification se fera à la fin)."""
+    """Modifie l'état IMMÉDIATEMENT. Si c'est une entrée, retire l'utilisateur direct."""
     global session_scan
     data = request.json
     tag_epc = data.get('rfid_tag_epc')
@@ -1207,9 +1215,9 @@ def scan_objet():
         return jsonify({"status": "error", "message": "Tag RFID non détecté."}), 400
 
     db = get_db()
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor(dictionary=True, buffered=True)
     try:
-        # Trouver le matériel associé au tag
+        # 1. Trouver le matériel associé au tag
         cursor.execute("SELECT id_materiel, nom_modele, etat FROM materiel_stock WHERE rfid_tag_epc = %s", (tag_epc,))
         item = cursor.fetchone()
         
@@ -1219,7 +1227,7 @@ def scan_objet():
         id_m = item['id_materiel']
         etat_bdd = str(item['etat']).strip().capitalize()
         
-        # Détermination du futur état ciblé par ce scan
+        # 2. Détermination du futur état ciblé par ce scan
         futur_etat = "Disponible"
         if tag_epc in session_scan:
             if session_scan[tag_epc]['etat'] == "Disponible":
@@ -1228,7 +1236,17 @@ def scan_objet():
             if etat_bdd == "Disponible":
                 futur_etat = "Sortie"
 
-        # Mise à jour de la session temporaire
+        # 3. MISE À JOUR STRICTE ET IMMÉDIATE EN BDD
+        if futur_etat == "Disponible":
+            # Si le matos rentre : on le rend dispo ET on vire l'utilisateur actuel direct !
+            cursor.execute("UPDATE materiel_stock SET etat='Disponible', id_utilisateur_actuel=NULL WHERE id_materiel=%s", (id_m,))
+        else:
+            # Si le matos sort : on change juste l'état. L'attribution à l'user se fera au badge.
+            cursor.execute("UPDATE materiel_stock SET etat='Sortie' WHERE id_materiel=%s", (id_m,))
+        
+        db.commit() # Application immédiate en BDD
+
+        # 4. Mise à jour de la session pour l'affichage tablette
         if tag_epc in session_scan:
             session_scan[tag_epc]['etat'] = futur_etat
         else:
@@ -1238,7 +1256,7 @@ def scan_objet():
                 'etat': futur_etat
             }
         
-        # Envoi de l'ID à l'interface graphique (remplace l'EPC)
+        # Envoi à l'interface graphique
         socketio.emit('mouvement_stock', {
             'id': id_m, 
             'nom': item['nom_modele'],
@@ -1247,6 +1265,7 @@ def scan_objet():
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
+        db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         cursor.close()
@@ -1255,26 +1274,28 @@ def scan_objet():
 
 @app.route("/valider_session_finale", methods=['POST'])
 def valider_session_finale():
+    """Attribue uniquement les matériels cochés et en 'Sortie' à l'utilisateur du badge."""
     global session_scan
     data = request.json
     badge_uid_raw = data.get('badge_uid')
-    tags_selectionnes = data.get('tags', [])
-    statut_local = data.get('statut_local') # 'OUI', 'NON' ou None (première vérification)
+    tags_selectionnes = [str(t) for t in data.get('tags', [])]
+    statut_local = data.get('statut_local')
 
+    # Si rien n'est coché à l'écran, on reset le dictionnaire de session et c'est tout
     if not tags_selectionnes:
         session_scan = {} 
-        return jsonify({"status": "ok", "message": "Aucun équipement à traiter."})
+        return jsonify({"status": "ok", "message": "Aucun équipement sélectionné."})
 
     if not badge_uid_raw or badge_uid_raw == "SESSION_TABLETTE":
-        return jsonify({"status": "error", "message": "Veuillez scanner votre badge sur la popup pour valider."}), 400
+        return jsonify({"status": "error", "message": "Veuillez scanner votre badge pour valider."}), 400
 
     badge_hash = hashlib.sha256(str(badge_uid_raw).strip().encode()).hexdigest()
     
     db = get_db()
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor(dictionary=True, buffered=True)
     
     try:
-        # 1. Identification de l'utilisateur qui badge
+        # 1. Qui est le prof / l'utilisateur qui badge ?
         cursor.execute("SELECT id_utilisateur, utilisateur FROM utilisateurs WHERE badge_uid = %s", (badge_hash,))
         user = cursor.fetchone()
         if not user:
@@ -1283,10 +1304,10 @@ def valider_session_finale():
         id_u = user['id_utilisateur']
         erreurs_reservations = {}
 
-        # 2. Contrôle des réservations pour les sorties
+        # 2. Contrôle des réservations (uniquement pour les Sorties cochées)
         for tag_epc, infos in session_scan.items():
-            id_m = infos['id']
-            if str(id_m) in [str(t) for t in tags_selectionnes] and infos['etat'] == "Sortie":
+            id_m = str(infos['id'])
+            if id_m in tags_selectionnes and infos['etat'] == "Sortie":
                 cursor.execute("""
                     SELECT r.id_utilisateur, u.utilisateur, r.date_reservation 
                     FROM reservations r
@@ -1300,28 +1321,30 @@ def valider_session_finale():
 
                 if res and id_u != res['id_utilisateur']:
                     date_fr = res['date_reservation'].strftime('%d/%m/%Y')
-                    erreurs_reservations[str(id_m)] = {
+                    erreurs_reservations[id_m] = {
                         "nom_bloquant": res['utilisateur'],
                         "date_bloquante": date_fr
                     }
 
-        # S'il y a des erreurs de réservation, on bloque ICI avant de demander le statut du local
         if erreurs_reservations:
             return jsonify({
                 "status": "bloque_reservation", 
-                "message": "Certains matériels sont réservés par d'autres utilisateurs.",
+                "message": "Certains matériels cochés sont réservés par d'autres utilisateurs.",
                 "details": erreurs_reservations
             }), 200
 
-        # 3. Si le statut du local n'est pas encore envoyé, on attend la réponse de la popup (OUI/NON)
+        # 3. Attente du choix de fermeture du local (OUI/NON)
         if statut_local is None:
             return jsonify({"status": "attente_statut_local", "utilisateur": user['utilisateur']})
 
-        # 4. ÉCRITURE EN BDD SI TOUT EST OK ET LE CHOIX OUI/NON A ÉTÉ FAIT
+        # 4. ÉTAPE FINALE : ATTRIBUTION DE CE QUI EST COCHÉ
         for tag_epc, infos in list(session_scan.items()):
-            id_m = infos['id']
-            if str(id_m) in [str(t) for t in tags_selectionnes]:
+            id_m = str(infos['id'])
+            
+            if id_m in tags_selectionnes:
                 if infos['etat'] == "Sortie":
+                    # --- CAS DE LA SORTIE COCHÉE ---
+                    # Calcul de la date limite
                     cursor.execute("""
                         SELECT date_reservation FROM reservations 
                         WHERE id_materiel=%s AND statut IN ('Confirmée', 'Retard') AND date_reservation > NOW() 
@@ -1330,7 +1353,10 @@ def valider_session_finale():
                     prochaine_res = cursor.fetchone()
                     date_limite = prochaine_res['date_reservation'] if prochaine_res else (datetime.now() + timedelta(days=2))
 
-                    cursor.execute("UPDATE materiel_stock SET etat='Sortie', id_utilisateur_actuel=%s WHERE id_materiel=%s", (id_u, id_m))
+                    # C'est ICI qu'on attribue enfin le matos à l'utilisateur !
+                    cursor.execute("UPDATE materiel_stock SET id_utilisateur_actuel=%s WHERE id_materiel=%s", (id_u, id_m))
+                    
+                    # Mise à jour ou création de la réservation liée à cet emprunt
                     cursor.execute("""
                         UPDATE reservations SET statut='Récupérée', date_emprunt=NOW(), date_limite=%s 
                         WHERE id_materiel=%s AND id_utilisateur=%s AND statut IN ('Confirmée', 'Retard')
@@ -1341,18 +1367,24 @@ def valider_session_finale():
                             INSERT INTO reservations (id_materiel, id_utilisateur, date_reservation, date_emprunt, date_limite, statut) 
                             VALUES (%s, %s, NOW(), NOW(), %s, 'Récupérée')
                         """, (id_m, id_u, date_limite))
+
                 else: 
-                    cursor.execute("UPDATE materiel_stock SET etat='Disponible', id_utilisateur_actuel=NULL WHERE id_materiel=%s", (id_m,))
+                    # --- CAS DE L'ENTRÉE COCHÉE ---
+                    # L'id_utilisateur_actuel est DEJA mis à NULL via la route /scan_objet.
+                    # Ici, on vient juste clôturer proprement la ligne de réservation historique de l'ancien emprunteur
+                    # Note : On cherche l'ancienne ligne 'Récupérée' ou 'Retard' pour ce matériel
                     cursor.execute("""
                         UPDATE reservations SET statut='Rendu' 
-                        WHERE id_materiel=%s AND id_utilisateur=%s AND statut IN ('Récupérée', 'Retard')
-                    """, (id_m, id_u))
+                        WHERE id_materiel=%s AND statut IN ('Récupérée', 'Retard')
+                    """, (id_m,))
 
+                # Dans tous les cas, on enregistre l'historique dans la table mouvements au nom du badgeur
                 cursor.execute("""
                     INSERT INTO mouvements (id_materiel, id_utilisateur, type_mouvement, date_heure) 
                     VALUES (%s, %s, %s, NOW())
                 """, (id_m, id_u, "Entrée" if infos['etat'] == "Disponible" else "Sortie"))
                 
+                # On retire l'objet traité de la session temporaire
                 del session_scan[tag_epc]
 
         db.commit()
@@ -1364,6 +1396,7 @@ def valider_session_finale():
     finally:
         cursor.close()
         db.close()
+
 
 # --- RELANCE RETARDS (ADMIN) ---
 @app.route("/relancer_retard/<int:id_res>")

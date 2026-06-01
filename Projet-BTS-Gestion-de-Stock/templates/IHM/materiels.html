@@ -64,7 +64,7 @@
         
         <div class="search-container">
             <form method="get" action="/materiels" class="search-form">
-                <input type="text" name="recherche" class="search-input" placeholder="Rechercher un modèle ou tag..." value="{{ recherche }}">
+                <input type="text" name="recherche" class="search-input" placeholder="Rechercher modèle, tag ou ID..." value="{{ recherche }}">
                 <button type="submit" class="btn-search">Rechercher</button>
                 {% if recherche %}
                     <a href="/materiels" class="btn-clear">X</a>
