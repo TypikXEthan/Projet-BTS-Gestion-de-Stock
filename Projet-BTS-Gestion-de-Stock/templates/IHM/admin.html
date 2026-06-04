@@ -273,16 +273,23 @@
 <div id="modalMat" class="modal">
     <div class="modal-content">
         <h3>Modifier Matériel</h3>
-        <form method="POST">
-            <input type="hidden" name="action" value="modifier_materiel_complet">
+        <form method="POST" id="formModifMat">
+            <input type="hidden" name="action" id="matAction" value="modifier_materiel_complet">
             <input type="hidden" name="id_materiel" id="m_m_id">
+            
+            <label>Nom / Modèle</label>
             <input type="text" name="nom_modele" id="m_m_nom" class="input-modal">
+            
+            <label>Tag RFID EPC</label>
             <input type="text" name="rfid_tag_epc" id="m_m_rfid" class="input-modal">
+            
+            <label>État</label>
             <select name="nouveau_statut" id="m_m_etat" class="input-modal">
                 <option value="disponible">Disponible</option>
                 <option value="maintenance">Maintenance</option>
                 <option value="sortie">Sortie</option>
             </select>
+            
             <label>Attribuer à :</label>
             <select name="id_utilisateur_actuel" id="m_m_user" class="input-modal">
                 <option value="">-- En Stock --</option>
@@ -290,12 +297,15 @@
                 <option value="{{ u.id_utilisateur }}">{{ u.nom }} {{ u.prenom }}</option>
                 {% endfor %}
             </select>
-            <button type="submit" class="btn btn-success" style="width:100%; background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Enregistrer</button>
-            <button type="button" class="btn" onclick="fermerModal('modalMat')" style="width:100%; margin-top:5px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px">
+                <button type="submit" class="btn btn-success" style="background:#27ae60; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Enregistrer</button>
+                <button type="button" class="btn-supprimer" onclick="confirmerSuppressionMat()">Supprimer</button>
+            </div>
+            <button type="button" class="btn" onclick="fermerModal('modalMat')" style="width:100%; margin-top:10px; background:#ccc; border:none; padding:10px; border-radius:4px; cursor:pointer;">Annuler</button>
         </form>
     </div>
 </div>
-
 <script>
     function toggleMdp(idInput) {
         const input = document.getElementById(idInput);
@@ -329,6 +339,12 @@
             document.getElementById('formModifUser').submit();
         }
     }
+function confirmerSuppressionMat() {
+    if(confirm("Supprimer définitivement ce matériel de l'inventaire ?")) {
+        document.getElementById('matAction').value = "supprimer_materiel";
+        document.getElementById('formModifMat').submit();
+    }
+}
 
     function ouvrirMat(id, nom, rfid, etat, uid) {
         document.getElementById('m_m_id').value = id;

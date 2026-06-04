@@ -701,7 +701,6 @@ def all_reservations():
 
 #-----------------
 #Administration
-#-----------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     # Vérification de sécurité
@@ -733,7 +732,7 @@ def admin():
             db.commit()
             flash("Horaires de passage mis à jour avec succès.", "success")
 
-# --- CRÉER UTILISATEUR (AVEC SALT) ---
+        # --- CRÉER UTILISATEUR (AVEC SALT) ---
         elif action == "creer_utilisateur":
             nom = request.form.get("nom")
             prenom = request.form.get("prenom")
@@ -746,17 +745,12 @@ def admin():
             admin_status = request.form.get("admin_status")
 
             # --- VALIDATION DU MOT DE PASSE ---
-            # Vérifie 10 caractères ET au moins un caractère spécial
             if len(mdp_clair) < 10 or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", mdp_clair):
                 flash("Erreur : Le mot de passe doit contenir au moins 10 caractères et un caractère spécial.", "danger")
                 return redirect(url_for('admin'))
 
-            # Génération du Salt unique
             nouveau_salt = uuid.uuid4().hex
-            # Hashage du mot de passe avec le Salt
             mdp_hash = hashlib.sha256((mdp_clair + nouveau_salt).encode()).hexdigest()
-            
-            # Hashage du badge
             badge_hash = hashlib.sha256(badge_clair.encode()).hexdigest() if badge_clair else None
 
             try:
@@ -775,7 +769,6 @@ def admin():
             nouveau_mdp = request.form.get("nouveau_mdp")
             nouveau_badge = request.form.get("badge_uid")
 
-            # Mise à jour des infos de base
             cursor.execute("""
                 UPDATE utilisateurs SET utilisateur=%s, nom=%s, prenom=%s, email=%s, telephone=%s, role=%s, admin=%s
                 WHERE id_utilisateur=%s
@@ -783,14 +776,11 @@ def admin():
                   request.form.get("email"), request.form.get("telephone"),
                   request.form.get("role"), request.form.get("admin_status"), id_u))
             
-            # Si un nouveau badge est renseigné
             if nouveau_badge and nouveau_badge.strip() != "":
                 b_hash = hashlib.sha256(nouveau_badge.encode()).hexdigest()
                 cursor.execute("UPDATE utilisateurs SET badge_uid=%s WHERE id_utilisateur=%s", (b_hash, id_u))
 
-            # Si un nouveau mot de passe est renseigné
             if nouveau_mdp and nouveau_mdp.strip() != "":
-                # --- VALIDATION DU NOUVEAU MOT DE PASSE ---
                 if len(nouveau_mdp) < 10 or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", nouveau_mdp):
                     flash("Erreur : Le nouveau mot de passe doit contenir 10 caractères et un caractère spécial.", "danger")
                     return redirect(url_for('admin'))
@@ -803,18 +793,20 @@ def admin():
             db.commit()
             flash("Profil utilisateur mis à jour.", "info")
 
-
         # --- SUPPRIMER UTILISATEUR ---
         elif action == "supprimer_utilisateur":
             id_u = request.form.get("id_utilisateur")
             if int(id_u) == session.get('id_user'):
                 flash("Vous ne pouvez pas supprimer votre propre compte !", "danger")
             else:
-                cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur = %s", (id_u,))
-                db.commit()
-                flash("Utilisateur supprimé.", "warning")
+                try:
+                    cursor.execute("DELETE FROM utilisateurs WHERE id_utilisateur = %s", (id_u,))
+                    db.commit()
+                    flash("Utilisateur supprimé.", "warning")
+                except mysql.connector.Error as err:
+                    flash(f"Impossible de supprimer l'utilisateur (historique existant) : {err}", "danger")
 
-        # --- MATÉRIEL ---
+        # --- MATÉRIEL : AJOUTER ---
         elif action == "ajouter_materiel":
             cursor.execute("""
                 INSERT INTO materiel_stock (id_materiel, nom_modele, rfid_tag_epc, etat, actif, reservable) 
@@ -823,6 +815,18 @@ def admin():
             db.commit()
             flash("Matériel ajouté.", "success")
 
+        # 👇 ICI : LE NOUVEAU BLOC POUR SUPPRIMER LE MATÉRIEL
+        elif action == "supprimer_materiel":
+            id_m = request.form.get("id_materiel")
+            try:
+                cursor.execute("DELETE FROM materiel_stock WHERE id_materiel = %s", (id_m,))
+                db.commit()
+                flash("Le matériel a définitivement été supprimé de l'inventaire.", "warning")
+            except mysql.connector.Error as err:
+                # Évite le plantage si le matériel est actuellement lié à des réservations ou à un journal d'accès
+                flash("Erreur : Impossible de supprimer ce matériel car il possède un historique (réservations ou mouvements).", "danger")
+
+        # --- MATÉRIEL : MODIFIER ---
         elif action == "modifier_materiel_complet":
             id_m = request.form.get("id_materiel")
             u_act = request.form.get("id_utilisateur_actuel")
@@ -847,7 +851,7 @@ def admin():
 
     cursor.execute("""
         SELECT r.id_reservation, 
-               r.id_materiel,        -- Ajout de l'ID ici
+               r.id_materiel, 
                r.date_reservation, 
                r.date_limite, 
                r.statut, 
@@ -872,6 +876,7 @@ def admin():
                            reservations=reservations_list, 
                            prenom=session.get("prenom"), 
                            nom=session.get("nom"))
+
 #------------------
 #prets
 #-------------------
