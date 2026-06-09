@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - Système RFID</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        /* Styles spécifiques pour la page login */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f7f6;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .logo-lycee {
+            max-width: 150px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+
+        .carte-connexion {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        .carte-connexion h2 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .carte-connexion p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        /* Conteneur pour aligner l'oeil */
+        .pwd-container {
+            position: relative;
+            width: 100%;
+        }
+
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        /* Style pour l'icône de l'oeil */
+        .toggle-pwd {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            user-select: none;
+            color: #999;
+            font-size: 18px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .erreur {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 14px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+</head>
+<body>
+
+    <img src="{{ url_for('static', filename='images/Logo_lavoisier.jpg') }}" alt="Logo Lavoisier" class="logo-lycee">
+
+<div class="carte-connexion">
+        <h2>Connexion</h2>
+        <p>Accès au système RFID</p>
+
+        <form method="POST" id="loginForm">
+            <div class="form-group">
+                <input type="text" name="utilisateur" id="userField" placeholder="Nom d'utilisateur" required>
+            </div>
+
+            <div class="form-group">
+                <div class="pwd-container">
+                    <input type="password" name="mot_de_passe" id="passField" placeholder="Mot de passe" required>
+                    <span class="toggle-pwd" onclick="toggleMdp()">👁️</span>
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn">Se connecter</button>
+        </form>
+
+        <a href="https://lavoisierlocal.online/tablette" class="btn-tablette">📱 Mode Tablette</a>
+
+        {% if erreur %}
+        <div class="erreur" id="msgErreur">{{ erreur }}</div>
+        {% endif %}
+
+        <div class="footer">Projet RFID – BTS CIEL</div>
+    </div>
+
+    <script>
+        // Fonction pour afficher/masquer le MDP
+        function toggleMdp() {
+            const passInp = document.getElementById('passField');
+            const icon = document.querySelector('.toggle-pwd');
+            if (passInp.type === "password") {
+                passInp.type = "text";
+                icon.textContent = "🙈";
+            } else {
+                passInp.type = "password";
+                icon.textContent = "👁️";
+            }
+        }
+
+        // Récupération de la variable d'attente envoyée par Flask (0 par défaut)
+        let secondesRestantes = {{ attente if attente else 0 }};
+        const btn = document.getElementById('submitBtn');
+        const msg = document.getElementById('msgErreur');
+        const userInp = document.getElementById('userField');
+        const passInp = document.getElementById('passField');
+
+        if (secondesRestantes > 0) {
+            btn.disabled = true;
+            userInp.disabled = true;
+            passInp.disabled = true;
+
+            const compteARebours = setInterval(() => {
+                secondesRestantes--;
+                
+                if (msg) {
+                    msg.innerText = "Trop de tentatives. Réessayez dans " + secondesRestantes + " secondes.";
+                }
+
+                if (secondesRestantes <= 0) {
+                    clearInterval(compteARebours);
+                    btn.disabled = false;
+                    userInp.disabled = false;
+                    passInp.disabled = false;
+                    
+                    if (msg) {
+                        msg.innerText = "Vous pouvez maintenant réessayer.";
+                        msg.style.backgroundColor = "#d4edda";
+                        msg.style.color = "#155724";
+                        msg.style.borderColor = "#c3e6cb";
+                    }
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

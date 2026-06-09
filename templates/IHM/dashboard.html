@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de bord - BTS RFID</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ihm.css') }}">
+    <style>
+        /* Styles pour les alertes de retard */
+        .alerte-retard {
+            background-color: #fff5f5;
+            border: 2px solid #ff4d4d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(255, 77, 77, 0.1);
+        }
+        .alerte-retard h3 {
+            color: #d32f2f;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Styles pour les alertes de réservation future (Le nouveau truc) */
+        .alerte-reservation {
+            background: #fff9db;
+            border-left: 4px solid #fab005;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85em;
+            color: #856404;
+            font-weight: 500;
+        }
+
+        .badge-emprunt {
+            background: #e7f5ff;
+            color: #1971c2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.8em;
+        }
+
+        .table-retard, .table-classique {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .table-retard th, .table-classique th {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .table-retard td, .table-classique td {
+            padding: 12px;
+            border-bottom: 1px solid #f9f9f9;
+        }
+
+        .text-orange { color: #f59f00; }
+        .font-bold { font-weight: bold; }
+    </style>
+</head>
+<body class="corps-tableau-de-bord">
+
+<div class="barre-laterale">
+    <h2>RFID</h2>
+    <a href="/dashboard" class="actif">Tableau de bord</a>
+    <a href="/materiels">Matériels</a>
+    <a href="/historique">Historique Matériels</a>
+    <a href="/historique_acces">Journal d'accès</a>
+    <a href="/utilisateurs">Utilisateurs</a>
+    <a href="/reservations">Réservations</a>
+    <a href="/profil">Mon Profil</a>
+
+    {% if session["admin"] == 1 %}
+    <a href="/admin" class="admin-btn">Administration</a>
+    {% endif %}
+    <a href="/logout" class="deconnexion">Déconnexion</a>
+</div>
+
+<div class="contenu-tableau-de-bord">
+
+    <header class="top-bar">
+        <div class="titre-page">
+            <h1>Tableau de bord</h1>
+        </div>
+
+        <div class="menu-utilisateur" id="userBtn">
+            <div class="user-info">
+                <span>{{ prenom }} {{ nom }}</span>
+                <span class="fleche">▼</span>
+            </div>
+            
+            <div class="dropdown-menu" id="userDropdown">
+                <a href="/profil">Mon Profil</a>
+                <hr>
+                <a href="/logout" class="text-rouge">Déconnexion</a>
+            </div>
+        </div>
+    </header>
+
+    {% if mes_retards %}
+    <div class="alerte-retard">
+        <h3> ATTENTION : Retards de restitution</h3>
+        <table class="table-retard">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Modèle</th>
+                    <th>Date limite</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in mes_retards %}
+                <tr>
+                    <td>#{{ r.id_materiel }}</td>
+                    <td>{{ r.nom_modele }}</td>
+                    <td><b>{{ r.date_limite }}</b></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="statistiques">
+        <div class="carte bleu">
+            <h3>Disponibles</h3>
+            <p>{{ nb_stock }}</p>
+        </div>
+        <div class="carte bleu-clair">
+            <h3>Sortis</h3>
+            <p>{{ nb_sorti }}</p>
+        </div>
+    </div>
+
+    <div class="conteneur-tableau" style="margin-bottom: 30px; border-top: 4px solid #3b82f6;">
+        <h3 style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.2em;"></span> Mes matériels en possession
+        </h3>
+        
+        <table class="table-classique">
+            <thead>
+                <tr>
+                    <th>Matériel</th>
+                    <th>Statut</th>
+                    <th>Note de restitution</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in mes_emprunts %}
+                <tr>
+                    <td><span class="badge-emprunt">#{{ e.id_materiel }}</span> <b>{{ e.nom_modele }}</b></td>
+                    <td><span class="badge badge-sortie">En main</span></td>
+                    <td>
+                        {% if e.date_prochaine_resa %}
+                        <div class="alerte-reservation">
+                            <span> Attendu par <b>{{ e.nom_prochain_user }}</b> le {{ e.date_prochaine_resa.strftime('%d/%m') }}</span>
+                        </div>
+                        {% else %}
+                        <span style="opacity: 0.4; font-size: 0.85em;">Pas de réservation après vous</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if not mes_emprunts %}
+        <p style="padding: 30px; text-align: center; opacity: 0.5; font-style: italic;">
+            Vous n'avez aucun matériel en votre possession actuellement.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="conteneur-tableau">
+        <h3>Derniers mouvements (Global)</h3>
+        <table class="table-classique">
+            <thead>
+                <tr>
+                    <th>Matériel</th>
+                    <th>Utilisateur</th>
+                    <th>Mouvement</th>
+                    <th>Date / Heure</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in mouvements %}
+                <tr>
+                    <td>{{ m.nom_modele }}</td>
+                    <td>{{ m.prenom }} {{ m.nom }}</td>
+                    <td>
+                        <span class="badge {{ 'badge-entree' if m.type_mouvement == 'Entrée' else 'badge-sortie' }}">
+                            {{ m.type_mouvement }}
+                        </span>
+                    </td>
+                    <td>{{ m.date_heure }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+    const userBtn = document.getElementById('userBtn');
+    const userDropdown = document.getElementById('userDropdown');
+
+    userBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+    });
+
+    window.addEventListener('click', () => {
+        if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+        }
+    });
+</script>
+
+</body>
+</html>

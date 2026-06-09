@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scanner Badge</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/Logo_Haut_Page.png') }}"> 
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ecran.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .bg-default { background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%) !important; }
+        .bg-success { background: #16a34a !important; } 
+        .bg-warning { background: #d97706 !important; } 
+        .bg-error   { background: #dc2626 !important; } 
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            font-family: sans-serif;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            width: 90%;
+            max-width: 650px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            z-index: 10;
+        }
+
+        /* Bouton Administration légèrement relevé à 8% du bas */
+        .btn-admin-xl {
+            position: absolute;
+            bottom: 8%; 
+            left: 50%;
+            transform: translateX(-50%); 
+            background: rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            padding: 0.8rem 2.5rem;
+            border-radius: 9999px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            text-decoration: none;
+            transition: background 0.2s ease, transform 0.2s ease;
+            z-index: 20;
+        }
+        
+        .btn-admin-xl:active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: translateX(-50%) scale(0.95); 
+        }
+
+        .dot {
+            width: 14px;
+            height: 14px;
+            background-color: white;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+    </style>
+</head>
+<body id="main-bg" class="bg-default transition-colors duration-500">
+
+    <div class="glass-card">
+        <div id="status-icon" class="text-8xl mb-4 animate-pulse">🛜</div>
+        <h1 id="title" class="text-white text-4xl md:text-5xl font-black mb-4 tracking-wide uppercase">
+            SCANNEZ VOTRE BADGE ICI
+        </h1>
+        <p id="subtitle" class="text-xl md:text-2xl text-blue-200 font-medium">En attente du badge...</p>
+
+        <div id="countdown-zone" class="hidden mt-6 text-white text-lg font-bold bg-white/20 py-2 px-6 inline-block rounded-full">
+            Redirection dans <span id="timer" class="font-black text-xl text-yellow-300">3</span>s...
+        </div>
+
+        <div id="loader" class="mt-8 flex justify-center space-x-2">
+            <div class="dot"></div>
+            <div class="dot" style="animation-delay: 0.2s"></div>
+            <div class="dot" style="animation-delay: 0.4s"></div>
+        </div>
+    </div>
+
+    <a href="https://lavoisierlocal.online" class="btn-admin-xl">Administration</a>
+
+<script>
+    const socket = io({ transports: ["websocket"] });
+    
+    const bg = document.getElementById('main-bg');
+    const icon = document.getElementById('status-icon');
+    const title = document.getElementById('title');
+    const sub = document.getElementById('subtitle');
+    const loader = document.getElementById('loader');
+    const countdownZone = document.getElementById('countdown-zone');
+    const timerSpan = document.getElementById('timer');
+
+    socket.on('connect', () => {
+        console.log("✅ Connecté au serveur");
+        socket.emit('join_tablette', {});
+    });
+
+    socket.on('resultat_badge', (data) => {
+        console.log("📥 Signal reçu :", data);
+        loader.classList.add('hidden');
+        bg.classList.remove('bg-default', 'bg-success', 'bg-error', 'bg-warning');
+
+        if (data.status === 'vert') {
+            bg.classList.add('bg-success');
+            icon.innerText = "✅";
+            icon.classList.remove('animate-pulse');
+            title.innerText = "BIENVENUE";
+            sub.innerHTML = `<span class="text-3xl font-bold uppercase">${data.prenom}</span>`;
+            
+            countdownZone.classList.remove('hidden');
+            let timeLeft = 3;
+            const timerInterval = setInterval(() => {
+                timeLeft--;
+                timerSpan.innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    window.location.assign(data.redirect || '/tablette/flux_materiel');
+                }
+            }, 1000);
+
+        } else if (data.status === 'erreur_technique') {
+            bg.classList.add('bg-warning');
+            icon.innerText = "⚠️";
+            icon.classList.remove('animate-pulse');
+            title.innerText = "ERREUR";
+            sub.innerText = data.message || "CARTE NON LISIBLE";
+            setTimeout(resetScreen, 3000);
+
+        } else {
+            bg.classList.add('bg-error');
+            icon.innerText = "❌";
+            icon.classList.remove('animate-pulse');
+            title.innerText = "INCONNU";
+            sub.innerText = data.message || "Badge non reconnu";
+            setTimeout(resetScreen, 3000);
+        }
+    });
+
+    function resetScreen() {
+        bg.classList.remove('bg-success', 'bg-error', 'bg-warning');
+        bg.classList.add('bg-default');
+        icon.innerText = "🛜";
+        icon.classList.add('animate-pulse');
+        title.innerText = "SCANNEZ VOTRE BADGE ICI";
+        sub.innerText = "En attente du badge...";
+        loader.classList.remove('hidden');
+        countdownZone.classList.add('hidden');
+        timerSpan.innerText = "3";
+    }
+</script>
+</body>
+</html>
